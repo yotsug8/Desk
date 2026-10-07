@@ -32,7 +32,7 @@ export async function startBoard(opts) {
     myDrag: new Set(),     // что я сейчас тащу: чужие координаты для них не применяем
     past: null,            // снимок прошлого при просмотре истории
     pending: 0,
-    online: true,
+    online: null,          // null: ещё подключаемся
   };
   window.__desk = B; // для тестов и отладки
 
@@ -105,8 +105,9 @@ const canEdit = () => ['owner', 'editor'].includes(B.me.role) && !B.past;
 
 function updateStatus() {
   const el = $('status');
-  el.classList.toggle('bad', !B.online);
-  if (!B.online) el.textContent = 'нет связи';
+  el.classList.toggle('bad', B.online === false);
+  if (B.online === null) el.textContent = 'подключаюсь';
+  else if (!B.online) el.textContent = 'нет связи';
   else if (B.me.role === 'viewer') el.textContent = 'только просмотр';
   else el.textContent = B.pending ? 'сохраняю' : 'сохранено';
 }
