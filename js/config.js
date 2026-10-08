@@ -6,8 +6,8 @@ const LOCAL = {
 
 // Боевой проект Supabase. Ключ публичный: защита держится на RLS и функциях базы.
 const PROD = {
-  url: '',
-  key: '',
+  url: 'https://uqikajlcsktbieerugiw.supabase.co',
+  key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaWthamxjc2t0YmllZXJ1Z2l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE0NTAwNjUsImV4cCI6MjEwNzAyNjA2NX0.GzIY8wpRp617eIxHDkNDfLd7elm_Mxuy7r033AUApe0',
 };
 
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
