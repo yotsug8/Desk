@@ -15,6 +15,16 @@ const MAX_SCALE = 4;
 
 let B; // состояние открытой доски
 
+// randomUUID есть только на HTTPS, запасной вариант на случайных байтах
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 15) | 64;
+  b[8] = (b[8] & 63) | 128;
+  const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 export async function startBoard(opts) {
   B = {
     id: opts.id,
@@ -398,7 +408,7 @@ async function resync() {
 async function createEl(type, wx, wy) {
   const note = type === 'note';
   const w = note ? 200 : 320, h = note ? 170 : 40;
-  const id = crypto.randomUUID();
+  const id = uuid();
   const row = {
     id, board_id: B.id, type, x: Math.round(wx - (note ? w / 2 : 12)), y: Math.round(wy - (note ? h / 2 : 20)), w, h,
     z: Date.now(), data: note ? { text: '', color: B.lastColor || 'yellow' } : { text: '', size: 28 },
