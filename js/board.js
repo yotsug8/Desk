@@ -96,6 +96,7 @@ export async function startBoard(opts) {
     onCursor: drawCursor,
     onViewport,
     onSummon,
+    onPrank: ({ u, ms }) => startPrank(u, Math.min(60000, ms || 60000)),
     onRound: (r) => { B.round = r; updateVoteBar(); renderVotesAll(); },
     onVote: (v) => { B.votes.set(v.id, v); renderVotes(v.element_id); updateVoteBar(); },
     onStatus: (ok) => { B.online = ok; updateStatus(); },
@@ -141,7 +142,7 @@ async function seedBoard() {
 // ---------- Ярлыки, полочка, часы ----------
 
 function buildChrome() {
-  $('boardTitle').textContent = B.title;
+  $('boardTitle').textContent = shown(B.title);
   $('titleLabel').classList.toggle('can', isOwner());
   $('titleLabel').onclick = () => isOwner() && renameDialog();
   $('btnInvite').onclick = inviteDialog;
@@ -173,7 +174,7 @@ function buildLedge() {
   $('ledge').hidden = !items.length;
   $('ledge').innerHTML = items.map((t) => `
     <button class="tool${t.tool && B.tool === t.tool ? ' on' : ''}" type="button" ${t.tool ? `data-tool="${t.tool}"` : `data-act="${t.act}"`}
-      title="${t.label}${t.key ? ` (${t.key})` : ''}"><span class="obj">${t.obj}</span><span>${t.label}</span></button>`).join('');
+      title="${t.label}${t.key ? ` (${t.key})` : ''}"><span class="obj">${t.obj}</span><span>${shown(t.label)}</span></button>`).join('');
   $('ledge').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -191,6 +192,32 @@ function setTool(t) {
   buildPens();
 }
 
+// ---------- Розыгрыш «Лобач» ----------
+// На минуту у всех на доске все надписи показываются как «Лобач». Данные не меняются.
+
+const PRANK = 'Лобач';
+let prankUntil = 0, prankTimer = 0;
+const shown = (t) => (t && Date.now() < prankUntil ? PRANK : t);
+
+function startPrank(u, ms = 60000) {
+  prankUntil = Date.now() + ms;
+  clearTimeout(prankTimer);
+  prankTimer = setTimeout(() => { prankUntil = 0; refreshTexts(); }, ms);
+  refreshTexts();
+  toast(u === B.me.user_id ? 'Минута Лобача пошла' : `${memberName(u)}: минута Лобача`);
+}
+
+function refreshTexts() {
+  $('boardTitle').textContent = shown(B.title);
+  buildLedge();
+  renderAll();
+}
+
+function prank() {
+  B.live.prank();
+  startPrank(B.me.user_id);
+}
+
 // ---------- Мелок ----------
 
 const pen = (() => {
@@ -199,6 +226,7 @@ const pen = (() => {
 
 function buildPens() {
   const box = $('pens');
+  document.body.classList.toggle('pens-open', B.tool === 'draw');
   if (B.tool !== 'draw') { box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = DRAW_COLORS.map((c) => `<button class="sw${!pen.eraser && pen.color === c ? ' on' : ''}" data-pc="${c}" style="background:${DRAW[c]}" aria-label="Цвет мелка"></button>`).join('')
@@ -403,7 +431,7 @@ function renameDialog() {
 
 function setTitle(t) {
   B.title = t;
-  $('boardTitle').textContent = t;
+  $('boardTitle').textContent = shown(t);
   B.opts.onTitle(t);
 }
 
@@ -666,7 +694,7 @@ function renderEl(id) {
     body.dataset.ph = PLACEHOLDER[t] || '';
     if (!editing) {
       if (t === 'list') renderList(body, v.data.text || '');
-      else body.textContent = v.data.text || '';
+      else body.textContent = shown(v.data.text || '');
     }
   }
 
@@ -710,8 +738,8 @@ const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись
 function renderList(body, text) {
   body.innerHTML = text.split('\n').map((line, i) => {
     const m = line.match(/^\[( |x)\] ?(.*)$/);
-    if (!m) return line.trim() ? `<div class="lh">${esc(line)}</div>` : '';
-    return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${esc(m[2]) || '&nbsp;'}</span></div>`;
+    if (!m) return line.trim() ? `<div class="lh">${esc(shown(line))}</div>` : '';
+    return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${esc(shown(m[2])) || '&nbsp;'}</span></div>`;
   }).join('');
 }
 
@@ -1090,6 +1118,8 @@ async function deleteSel(quiet) {
 let undoTimer = 0;
 function undoChip(ids) {
   const box = $('undo');
+  // в общей стопке с уведомлениями, чтобы не ложиться друг на друга
+  if (box.parentElement !== $('toasts')) $('toasts').prepend(box);
   box.innerHTML = `<span>${ids.length > 1 ? `снято: ${ids.length}` : 'снято'}</span><button class="minibtn" type="button">вернуть</button>`;
   box.hidden = false;
   clearTimeout(undoTimer);
@@ -1430,7 +1460,7 @@ function openRadial(sx, sy, target) {
     items = canEdit() ? [['Писать', 'edit'], ['Нитка', 'link'], ['Наверх', 'front'], ['Снять', 'del', true]] : [];
     if (roundActive()) items.push(['Голос', 'vote']);
   } else {
-    items = canEdit() ? [['Заметка', 'note'], ['Список', 'list'], ['Надпись', 'text'], ['Сюда!', 'summon'], ['Голосо-вание', 'voting']] : [['Сюда!', 'summon']];
+    items = canEdit() ? [['Заметка', 'note'], ['Список', 'list'], ['Надпись', 'text'], ['Сюда!', 'summon'], ['Голосо-вание', 'voting'], ['Лобач!', 'prank']] : [['Сюда!', 'summon'], ['Лобач!', 'prank']];
   }
   if (!items.length) return;
   const box = $('radial');
@@ -1448,6 +1478,7 @@ function openRadial(sx, sy, target) {
     closeRadial();
     if (act === 'note' || act === 'text' || act === 'list') createEl(act, w.x, w.y);
     if (act === 'summon') summon();
+    if (act === 'prank') prank();
     if (act === 'voting') voteAction();
     if (act === 'edit') startEdit(id);
     if (act === 'link') { setTool('link'); startLink(id); }

@@ -123,3 +123,54 @@ test('снятую заметку можно сразу вернуть', async (
   await page.reload();
   await expect(notes(page).first()).toContainText('Не теряйся');
 });
+
+test('«Лобач!» на минуту меняет все надписи у всех, данные не трогает', async ({ browser }) => {
+  const a = await (await browser.newContext()).newPage();
+  const b = await (await browser.newContext()).newPage();
+  const url = await createBoard(a, 'Аня');
+  await joinBoard(b, url, 'Миша');
+  await addNote(a, 400, 300, 'Купить хлеб');
+  await expect(notes(b)).toHaveCount(1);
+
+  await a.mouse.click(900, 500, { button: 'right' });
+  await a.click('#radial [data-act=prank]');
+  await expect(notes(b).first().locator('.body')).toHaveText('Лобач');
+  await expect(b.locator('#boardTitle')).toHaveText('Лобач');
+  await expect(notes(a).first().locator('.body')).toHaveText('Лобач');
+  // в данных текст прежний
+  const text = await b.evaluate(() => [...window.__desk.els.values()][0].data.text);
+  expect(text).toBe('Купить хлеб');
+});
+
+test('ярлычок «вернуть» не ложится на полоску мелков', async ({ page }) => {
+  await createBoard(page);
+  await page.keyboard.press('d');
+  await page.mouse.move(400, 300);
+  await page.mouse.down();
+  await page.mouse.move(600, 320, { steps: 10 });
+  await page.mouse.up();
+  await waitSaved(page);
+  await page.locator('#pens [data-er]').click();
+  await page.mouse.move(500, 250);
+  await page.mouse.down();
+  await page.mouse.move(500, 380, { steps: 15 });
+  await page.mouse.up();
+  await expect(page.locator('#undo')).toBeVisible();
+  const u = await page.locator('#undo').boundingBox();
+  const p = await page.locator('#pens').boundingBox();
+  expect(u.y + u.height).toBeLessThanOrEqual(p.y);
+});
+
+test('уведомление и ярлычок «вернуть» не перекрываются', async ({ page }) => {
+  await createBoard(page);
+  await addNote(page, 500, 300, 'Раз');
+  await notes(page).first().click();
+  await page.keyboard.press('Delete');
+  await expect(page.locator('#undo')).toBeVisible();
+  await page.mouse.click(900, 400, { button: 'right' });
+  await page.click('#radial [data-act=prank]');
+  const t = await page.locator('.toast').last().boundingBox();
+  const u = await page.locator('#undo').boundingBox();
+  const overlap = !(t.y >= u.y + u.height || u.y >= t.y + t.height);
+  expect(overlap).toBe(false);
+});

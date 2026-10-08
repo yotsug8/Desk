@@ -417,3 +417,8 @@ svg.i.s { width: 16px; height: 16px; }
   .tool .obj { transform: scale(.75); }
   .pens { bottom: 86px; left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; }
 }
+
+/* пока открыта полоска мелков, ярлычок «вернуть» и уведомления над ней, а не поверх */
+body.pens-open .undo, body.pens-open .toasts { bottom: calc(var(--frame) + 152px); }
+@media (max-width: 640px) { body.pens-open .undo, body.pens-open .toasts { bottom: 150px; } }
+.toasts .undo { position: static; transform: rotate(-1deg); pointer-events: auto; }
