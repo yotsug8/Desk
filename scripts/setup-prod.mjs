@@ -25,8 +25,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // 1. Проект
 let project = (await api('GET', '/projects')).find((p) => p.name === NAME);
 if (!project) {
-  const [org] = await api('GET', '/organizations');
-  if (!org) throw new Error('В аккаунте Supabase нет организации');
+  // у нового аккаунта организации нет: создаём на бесплатном тарифе
+  let [org] = await api('GET', '/organizations');
+  if (!org) {
+    org = await api('POST', '/organizations', { name: 'Desk' });
+    console.log('создана организация', org.id);
+  }
   project = await api('POST', '/projects', {
     name: NAME,
     organization_id: org.id,
