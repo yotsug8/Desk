@@ -5,7 +5,7 @@ import { merge3, mapCaret } from './merge.js';
 import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
 import { initHistory } from './history.js';
-import { drawCork } from './cork.js';
+import { corkOn } from './cork.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'white'];
@@ -36,7 +36,7 @@ function uuid() {
 function tilt(id) {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(h) % 50) / 10 - 2.5).toFixed(1);
+  return ((Math.abs(h) % 31) / 10 - 1.5).toFixed(1);
 }
 
 export async function startBoard(opts) {
@@ -109,11 +109,6 @@ function buildChrome() {
   $('titleLabel').onclick = () => isOwner() && renameDialog();
   $('btnInvite').onclick = inviteDialog;
   $('btnHistory').onclick = () => B.history.toggle();
-  $('zoomIn').innerHTML = icon('plus', true);
-  $('zoomOut').innerHTML = icon('minus', true);
-  $('zoomIn').onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
-  $('zoomOut').onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
-  $('zoomReset').onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1 / B.cam.s);
   buildLedge();
   updateStatus();
   tickClock();
@@ -131,12 +126,11 @@ const LEDGE = [
   { tool: 'note', label: 'заметка', obj: '<i class="o-pad"></i>', edit: true, key: 'N' },
   { tool: 'text', label: 'надпись', obj: '<i class="o-marker"></i>', edit: true, key: 'T' },
   { tool: 'link', label: 'нитка', obj: '<i class="o-yarn"></i>', edit: true, key: 'L' },
-  { act: 'vote', label: 'голос', obj: '<i class="o-pins"><i style="--p:#b3261e"></i><i style="--p:#2f7a5a"></i><i style="--p:#6c3fa0"></i></i>' },
-  { act: 'summon', label: 'сюда!', obj: '<i class="o-bell"></i>' },
 ];
 
 function buildLedge() {
   const items = LEDGE.filter((t) => !t.edit || canEdit());
+  $('ledge').hidden = !items.length;
   $('ledge').innerHTML = items.map((t) => `
     <button class="tool${t.tool && B.tool === t.tool ? ' on' : ''}" type="button" ${t.tool ? `data-tool="${t.tool}"` : `data-act="${t.act}"`}
       title="${t.label}${t.key ? ` (${t.key})` : ''}"><span class="obj">${t.obj}</span><span>${t.label}</span></button>`).join('');
@@ -152,7 +146,7 @@ function buildLedge() {
 function setTool(t) {
   B.tool = t;
   if (t !== 'link') cancelLink();
-  for (const b of $('ledge').children) b.classList.toggle('on', !!t && (b.dataset.tool === t || (t === 'vote' && b.dataset.act === 'vote')));
+  for (const b of $('ledge').children) b.classList.toggle('on', !!t && b.dataset.tool === t);
   $('stage').className = 'stage' + (t ? ' tool-' + t : '');
   if (t === 'link') toast('Нажмите на первый элемент, потом на второй');
 }
@@ -328,20 +322,15 @@ function fitCamera() {
   applyCamera();
 }
 
-let corkQueued = false;
 function applyCamera() {
   const { x, y, s } = B.cam;
   $('world').style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   $('world').style.setProperty('--inv', 1 / s);
-  $('zoomReset').textContent = Math.round(s * 100) + '%';
+  corkOn($('app'), B.cam);
   for (const c of cursors.values()) placeCursor(c);
-  placeSelTools();
+  if (!$('seltools').hidden) placeSelTools();
   const c = toWorld(innerWidth / 2, innerHeight / 2);
   B.live?.viewport(c.x, c.y, s);
-  if (!corkQueued) {
-    corkQueued = true;
-    requestAnimationFrame(() => { corkQueued = false; drawCork($('cork'), B.cam); });
-  }
 }
 
 function toWorld(sx, sy) {
@@ -444,16 +433,11 @@ function renderEl(id) {
 
   // кнопка цвета автора и подпись
   let pin = node.querySelector('.pin');
-  let meta = node.querySelector('.meta');
   if (note) {
     if (!pin) { pin = document.createElement('i'); pin.className = 'pin'; node.append(pin); }
     pin.style.setProperty('--p', v.created_by ? memberColor(v.created_by) : '#b3261e');
-    if (!meta) { meta = document.createElement('div'); meta.className = 'meta'; node.append(meta); }
-    meta.textContent = v.created_by ? memberName(v.created_by) : '';
-  } else {
-    pin?.remove();
-    meta?.remove();
-  }
+    node.title = v.created_by ? memberName(v.created_by) : '';
+  } else pin?.remove();
 
   let grip = node.querySelector('.grip');
   if (!grip && canEdit()) { grip = document.createElement('div'); grip.className = 'grip'; node.append(grip); }
@@ -470,6 +454,20 @@ function renderEl(id) {
   } else if (tag) tag.remove();
 
   renderVotes(id);
+}
+
+// Быстрый путь для перетаскивания: только координаты и размер
+function moveNode(id) {
+  const node = B.nodes.get(id);
+  const r = B.els.get(id);
+  if (!node || !r || B.past) return renderEl(id);
+  node.style.left = r.x + 'px';
+  node.style.top = r.y + 'px';
+  if (r.type === 'note') {
+    node.style.width = r.w + 'px';
+    node.style.height = r.h + 'px';
+  }
+  queueStrings();
 }
 
 let reorderQueued = false;
@@ -517,25 +515,67 @@ function queueStrings() {
 }
 
 let tempEnd = null; // куда тянется нитка, пока её ведут
+const strings = new Map(); // id нитки -> её SVG-узлы
+const SVGNS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs) => {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+};
+
 function renderStrings() {
-  const ids = new Set([...B.els.keys(), ...(B.past ? B.past.keys() : [])]);
-  let html = '';
+  const svg = $('strings');
+  const seen = new Set();
+  const ids = B.past ? [...B.past.keys()] : [...B.els.keys()];
   for (const id of ids) {
     const v = viewOf(id);
     if (!v || v.type !== 'link') continue;
     const a = anchor(v.data.from), b = anchor(v.data.to);
     if (!a || !b) continue;
-    const col = STRING[v.data.color] || STRING.red;
+    seen.add(id);
+    let st = strings.get(id);
+    if (!st) {
+      const g = svgEl('g', { 'data-link': id });
+      st = {
+        g,
+        sh: svgEl('path', { class: 'sh', transform: 'translate(1 3)' }),
+        path: svgEl('path', { class: 's' }),
+        c1: svgEl('circle', { r: 4 }),
+        c2: svgEl('circle', { r: 4 }),
+        hit: svgEl('path', { class: 'hit' }),
+      };
+      g.append(st.sh, st.path, st.c1, st.c2, st.hit);
+      svg.append(g);
+      strings.set(id, st);
+    }
     const d = sagPath(a, b);
-    html += `<g data-link="${id}" class="${B.sel.has(id) ? 'sel' : ''}">
-      <path class="s" d="${d}" stroke="${col}"/><circle cx="${a.x}" cy="${a.y}" r="4" fill="${col}"/><circle cx="${b.x}" cy="${b.y}" r="4" fill="${col}"/>
-      ${B.past ? '' : `<path class="hit" d="${d}"/>`}</g>`;
+    if (st.d !== d) {
+      st.d = d;
+      st.sh.setAttribute('d', d);
+      st.path.setAttribute('d', d);
+      st.hit.setAttribute('d', d);
+      st.c1.setAttribute('cx', a.x); st.c1.setAttribute('cy', a.y);
+      st.c2.setAttribute('cx', b.x); st.c2.setAttribute('cy', b.y);
+    }
+    const col = STRING[v.data.color] || STRING.red;
+    if (st.col !== col) {
+      st.col = col;
+      st.path.setAttribute('stroke', col);
+      st.c1.setAttribute('fill', col);
+      st.c2.setAttribute('fill', col);
+    }
+    st.g.classList.toggle('sel', B.sel.has(id));
+    st.hit.style.display = B.past ? 'none' : '';
   }
-  if (B.linkFrom && tempEnd) {
-    const a = anchor(B.linkFrom);
-    if (a) html += `<path class="s" d="${sagPath(a, tempEnd)}" stroke="${STRING.red}" opacity=".7"/>`;
-  }
-  $('strings').innerHTML = html;
+  for (const [id, st] of strings) if (!seen.has(id)) { st.g.remove(); strings.delete(id); }
+
+  // нитка, которую сейчас тянут
+  let temp = svg.querySelector('.temp');
+  const from = B.linkFrom && tempEnd && anchor(B.linkFrom);
+  if (from) {
+    if (!temp) { temp = svgEl('path', { class: 's temp', stroke: STRING.red, opacity: '.7' }); svg.append(temp); }
+    temp.setAttribute('d', sagPath(from, tempEnd));
+  } else temp?.remove();
 }
 
 function startLink(id) {
@@ -611,9 +651,9 @@ function updateVoteBar() {
       bar.querySelector('.time').textContent = `${mm}:${ss}`;
     };
     bar.hidden = false;
-    bar.innerHTML = `<span>Голосование <span class="time"></span></span><span>кнопок: ${MAX_VOTES - myVotes()}</span>
+    bar.innerHTML = `<span><span class="lbl-long">Голосование </span><span class="time"></span></span><span>кнопок: ${MAX_VOTES - myVotes()}</span>
       <button class="minibtn${B.tool === 'vote' ? ' go' : ''}" data-v="tool">${B.tool === 'vote' ? 'втыкаю' : 'голосовать'}</button>
-      ${canEdit() ? '<button class="minibtn" data-v="stop">закончить</button>' : ''}`;
+      ${canEdit() ? '<button class="minibtn" data-v="stop">стоп</button>' : ''}`;
     draw();
     voteTimer = setInterval(draw, 1000);
   } else if (has && B.hideResults !== B.round.round) {
@@ -687,7 +727,7 @@ function onDrag(items) {
     const r = B.els.get(id);
     if (!r || B.myDrag.has(id)) continue;
     Object.assign(r, { x, y, w, h });
-    renderEl(id);
+    moveNode(id);
   }
 }
 
@@ -1267,7 +1307,7 @@ function bindInput() {
         if (!r) continue;
         r.x = Math.round(p.x + dx / B.cam.s);
         r.y = Math.round(p.y + dy / B.cam.s);
-        renderEl(id);
+        moveNode(id);
         items.push([id, r.x, r.y, r.w, r.h]);
       }
       B.live.drag(items);
@@ -1277,7 +1317,7 @@ function bindInput() {
       if (!g.held) { g.held = true; B.myDrag.add(g.id); B.live.hold([g.id], 'move'); }
       r.w = Math.max(120, Math.round(g.w0 + dx / B.cam.s));
       r.h = Math.max(90, Math.round(g.h0 + dy / B.cam.s));
-      renderEl(g.id);
+      moveNode(g.id);
       B.live.drag([[g.id, r.x, r.y, r.w, r.h]]);
       placeSelTools();
     }
@@ -1378,6 +1418,9 @@ function bindInput() {
       else if (B.tool) setTool(null);
       else setSelection([]);
     } else if (e.key === 'Enter' && B.sel.size === 1) { e.preventDefault(); startEdit([...B.sel][0]); }
+    else if (e.key === '+' || e.key === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
+    else if (e.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
+    else if (e.key === '0') zoomAt(innerWidth / 2, innerHeight / 2, 1 / B.cam.s);
     else if (!e.ctrlKey && !e.metaKey && !e.altKey && canEdit()) {
       const k = { n: 'note', t: 'text', l: 'link' }[e.key.toLowerCase()];
       if (k) setTool(B.tool === k ? null : k);

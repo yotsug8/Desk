@@ -13,11 +13,10 @@
 </head>
 <body>
   <!-- Стартовый экран и вход -->
-  <main id="gate" class="gate cork-bg" hidden></main>
+  <main id="gate" class="gate" hidden></main>
 
   <!-- Доска -->
   <div id="app" class="app" hidden>
-    <canvas id="cork" class="cork"></canvas>
     <div id="stage" class="stage">
       <div id="world" class="world">
         <svg id="strings" class="strings" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -29,7 +28,6 @@
 
     <header class="top">
       <div id="titleLabel" class="label title-label">
-        <span class="tape"></span>
         <span id="boardTitle"></span>
         <small id="status" class="status"></small>
       </div>
@@ -42,12 +40,7 @@
     <div id="followBar" class="followbar" hidden></div>
 
     <nav id="ledge" class="ledge" aria-label="Инструменты"></nav>
-    <div class="label zoom">
-      <button id="zoomOut" type="button" aria-label="Отдалить"></button>
-      <button id="zoomReset" class="zoom-val" type="button">100%</button>
-      <button id="zoomIn" type="button" aria-label="Приблизить"></button>
-    </div>
-    <button id="btnHistory" class="clock" type="button" aria-label="История"><i class="h"></i><i class="m"></i><b></b><span>история</span></button>
+    <button id="btnHistory" class="clock" type="button" aria-label="История" title="История"><i class="h"></i><i class="m"></i><b></b></button>
 
     <aside id="history" class="hist" hidden></aside>
     <div id="pastBar" class="pastbar" hidden></div>

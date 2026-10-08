@@ -45,7 +45,8 @@ test('голосование: у каждого три кнопки, итоги 
   await addNote(a, 350, 300, 'Палатка');
   await addNote(a, 750, 300, 'Шатёр');
 
-  await a.click('[data-act=vote]');
+  await a.mouse.click(1000, 650, { button: 'right' });
+  await a.click('#radial [data-act=voting]');
   await a.click('[data-m="1"]');
   await expect(b.locator('#voteBar')).toContainText('Голосование');
 
@@ -81,7 +82,8 @@ test('«Сюда!» переносит камеру второго участн�
 
   // Аня уезжает далеко и зовёт
   for (let i = 0; i < 4; i++) await a.mouse.wheel(0, 600);
-  await a.click('[data-act=summon]');
+  await a.mouse.click(640, 400, { button: 'right' });
+  await a.click('#radial [data-act=summon]');
   const target = await a.evaluate(() => ({ x: window.__desk.cam.x, y: window.__desk.cam.y }));
   await expect.poll(() => b.evaluate(() => Math.round(window.__desk.cam.y))).toBe(Math.round(target.y));
   await expect(b.locator('.toast').last()).toContainText('Аня зовёт');

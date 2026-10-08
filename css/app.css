@@ -36,22 +36,12 @@ input { font: inherit; color: inherit; }
 svg.i { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 svg.i.s { width: 16px; height: 16px; }
 
-/* Пробка для статичных экранов (на доске её рисует canvas) */
-.cork-bg {
-  background-color: var(--cork);
-  background-image:
-    repeating-radial-gradient(circle at 13% 17%, #c69764 0 2px, #b07f4b 3px 4px, #bd8e59 5px 7px),
-    radial-gradient(#00000014 1px, #0000 1.6px);
-  background-size: 23px 19px, 7px 7px;
-  box-shadow: inset 0 0 160px #3b240f88;
-}
-
 /* Деревянная рама поверх всего */
 .frame {
   position: fixed; inset: 0; pointer-events: none; z-index: 40;
   border: var(--frame) solid var(--wood);
   border-image: linear-gradient(135deg, #7a5230, #4a2e17 40%, #6d4727 70%, #4a2e17) 1;
-  box-shadow: inset 0 0 0 2px #00000040, inset 0 0 40px #00000055;
+  box-shadow: inset 0 0 0 2px #00000040;
 }
 
 /* Бумажные ярлыки */
@@ -96,18 +86,18 @@ svg.i.s { width: 16px; height: 16px; }
 .gate .err { color: var(--red); margin-top: 10px; font-family: var(--hand); font-size: 22px; }
 
 /* ---------- Доска ---------- */
-.app { position: fixed; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
-.cork { position: absolute; inset: 0; width: 100%; height: 100%; }
+.app { position: fixed; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; background-color: var(--cork); }
+.gate { background-color: var(--cork); }
 .stage { position: absolute; inset: 0; }
 .stage.panning { cursor: grabbing; }
 .stage.tool-note, .stage.tool-text { cursor: crosshair; }
 .stage.tool-link { cursor: alias; }
 .stage.tool-vote { cursor: cell; }
-.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .strings { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 900000; }
-.strings path.s { fill: none; stroke-width: 2.4; stroke-linecap: round; filter: drop-shadow(0 2px 1.5px #0005); }
+.strings path.s { fill: none; stroke-width: 2.4; stroke-linecap: round; }
+.strings path.sh { fill: none; stroke: #0003; stroke-width: 2.4; }
 .strings path.hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
-.strings circle { filter: drop-shadow(0 1px 1px #0006); }
 .strings .sel path.s { stroke-dasharray: 8 5; }
 .cursors { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
 
@@ -117,7 +107,7 @@ svg.i.s { width: 16px; height: 16px; }
 }
 .top > * { pointer-events: auto; }
 .sp { flex: 1; pointer-events: none; }
-.title-label { position: relative; transform: rotate(-1.2deg); font-size: 28px; padding: 8px 18px 6px; min-width: 0; max-width: 46vw; }
+.title-label { position: relative; transform: rotate(-1deg); font-size: 28px; padding: 8px 18px 6px; min-width: 0; max-width: 46vw; }
 .title-label #boardTitle { display: block; overflow: hidden; text-overflow: ellipsis; }
 .title-label.can { cursor: text; }
 .status { display: block; font-family: var(--serif); font-size: 11px; color: var(--mute); margin-top: 1px; }
@@ -146,11 +136,6 @@ svg.i.s { width: 16px; height: 16px; }
 .o-marker { width: 64px; height: 14px; margin-bottom: 12px; border-radius: 3px;
   background: linear-gradient(90deg, #222 0 12%, #c0392b 12% 70%, #eee 70% 74%, #c0392b 74%); box-shadow: 0 3px 4px #0005; transform: rotate(-12deg); }
 .o-yarn { width: 38px; height: 38px; border-radius: 50%; background: repeating-linear-gradient(40deg, #c0392b 0 3px, #962d22 3px 5px); box-shadow: 0 4px 5px #0005; }
-.o-pins { display: flex; gap: 3px; padding: 6px 6px 4px; background: #e8dcc4; border-radius: 3px; box-shadow: 0 4px 5px #0005; margin-bottom: 4px; }
-.o-pins i, .pinhead { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fffa 0 2px, var(--p) 3px, #0006 9px); display: block; }
-.o-bell { width: 40px; height: 32px; margin-bottom: 6px; background: radial-gradient(circle at 50% 100%, #0000 0 7px, #d4a93c 8px) ; border-radius: 20px 20px 4px 4px;
-  box-shadow: inset -5px -3px 0 #b88d27, 0 4px 5px #0005; position: relative; }
-.o-bell::after { content: ""; position: absolute; left: 50%; top: -6px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: #b88d27; }
 
 /* Часы: открывают историю */
 .clock {
@@ -164,19 +149,15 @@ svg.i.s { width: 16px; height: 16px; }
 .clock i.h { height: 18px; }
 .clock i.m { height: 26px; width: 2px; }
 .clock b { position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: var(--red); }
-.clock span { position: absolute; left: 50%; bottom: -26px; transform: translateX(-50%); font-family: var(--hand); font-size: 20px; color: var(--chalk); text-shadow: 0 1px 3px #000a; }
 .clock.on { box-shadow: 0 0 0 3px var(--red), 2px 5px 9px #0006; }
 
-.zoom { position: absolute; left: calc(var(--frame) + 14px); bottom: calc(var(--frame) + 14px); z-index: 20; display: flex; align-items: center; gap: 2px; padding: 3px; transform: rotate(-1deg); }
-.zoom button { width: 30px; height: 30px; display: grid; place-items: center; }
-.zoom .zoom-val { width: auto; padding: 0 4px; font-size: 20px; }
 
 /* ---------- Элементы ---------- */
 .el { position: absolute; }
 .el .body { width: 100%; height: 100%; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; }
 .el.note {
-  padding: 26px 16px 24px; font-family: var(--hand); font-size: 25px; line-height: 1.08;
-  box-shadow: 2px 6px 10px #0000004d; transform: rotate(var(--rot, 0deg));
+  padding: 24px 16px 16px; font-family: var(--hand); font-size: 25px; line-height: 1.08;
+  box-shadow: 1px 4px 6px #0000004d; transform: rotate(var(--rot, 0deg));
 }
 .el.note::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -6px; height: 7px; background: inherit;
@@ -187,12 +168,8 @@ svg.i.s { width: 16px; height: 16px; }
 .el.note.c-green { background: var(--note-green); }
 .el.note.c-blue { background: var(--note-blue); }
 .el.note.c-white { background: var(--note-white); background-image: repeating-linear-gradient(#0000 0 26px, var(--paper-line) 27px); background-position: 0 24px; }
-.el .pin { position: absolute; top: -8px; left: 50%; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fffa 0 3px, var(--p) 4px, #0006 13px); box-shadow: 3px 5px 4px #0005; pointer-events: none; }
-.el.note .meta {
-  position: absolute; left: 16px; right: 16px; bottom: 4px; font-size: 17px; color: #0007;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.el .pin { position: absolute; top: -8px; left: 50%; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fffa 0 3px, var(--p) 4px, #0006 12px); box-shadow: 2px 3px 3px #0005; pointer-events: none; }
 .el.text { font-family: var(--hand); font-weight: 700; line-height: 1; color: var(--ink); text-shadow: 0 1px 0 #fff5; transform: rotate(var(--rot, 0deg)); }
 .el.text.c-white { color: var(--chalk); text-shadow: 0 2px 3px #0008; }
 .el.text.c-red { color: var(--red); text-shadow: 0 1px 0 #fff4; }
@@ -222,6 +199,7 @@ svg.i.s { width: 16px; height: 16px; }
 
 /* Кнопки голосования на элементе */
 .el .votes { position: absolute; right: -6px; bottom: -14px; display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 1px; max-width: 120px; pointer-events: auto; }
+.pinhead { border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fffa 0 2px, var(--p) 3px, #0006 9px); display: block; }
 .el .votes .pinhead { width: 20px; height: 20px; box-shadow: 2px 3px 3px #0005; }
 .el .votes .pinhead.mine { cursor: pointer; box-shadow: 0 0 0 2px #fffc, 2px 3px 3px #0005; }
 .el .votes b { font-family: var(--hand); font-size: 22px; color: #fff; background: var(--red); padding: 0 7px; margin-left: 3px; box-shadow: 1px 2px 3px #0005; }
@@ -325,12 +303,11 @@ svg.i.s { width: 16px; height: 16px; }
   .clock { width: 58px; height: 58px; right: 14px; bottom: 14px; border-width: 4px; }
   .clock::before { mask: radial-gradient(#0000 0 18px, #000 19px); -webkit-mask: radial-gradient(#0000 0 18px, #000 19px); }
   .clock i.h { height: 13px; } .clock i.m { height: 19px; }
-  .clock span { display: none; }
-  .zoom { display: none; }
   .hist { left: 12px; right: 12px; top: auto; bottom: 90px; width: auto; height: 52%; transform: none; }
   .pastbar { bottom: auto; top: 64px; font-size: 19px; }
   .pastbar .lbl-long { display: none; }
-  .votebar, .followbar { top: 64px; font-size: 18px; gap: 8px; padding: 4px 6px 4px 10px; max-width: calc(100vw - 28px); flex-wrap: wrap; justify-content: center; white-space: normal; }
+  .votebar, .followbar { top: 64px; font-size: 18px; gap: 8px; padding: 3px 5px 3px 10px; max-width: calc(100vw - 28px); }
+  .votebar .lbl-long { display: none; }
   .minibtn { font-size: 18px; padding: 1px 8px; }
 }
 @media (min-width: 641px) { .lbl-short { display: none; } }

@@ -2,6 +2,7 @@
 import { sb, ensureUser, rpc } from './api.js';
 import { esc, toast } from './ui.js';
 import { startBoard } from './board.js';
+import { corkOn } from './cork.js';
 
 const gate = document.getElementById('gate');
 const PEOPLE_COLORS = ['#e4572e', '#2a9d8f', '#7b61ff', '#d17a00', '#c2185b', '#1e88e5', '#43a047', '#6d4c41'];
@@ -40,6 +41,7 @@ function boardUrl(id, secret) {
 function showGate(html) {
   document.getElementById('app').hidden = true;
   gate.hidden = false;
+  corkOn(gate);
   gate.innerHTML = `<div class="card"><span class="tape"></span>${html}</div>`;
   return gate.firstElementChild;
 }
