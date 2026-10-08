@@ -32,10 +32,11 @@ if (!project) {
       org = await api('POST', '/organizations', { name: 'Desk' });
       console.log('создана организация', org.id);
     } catch (err) {
-      // организация могла появиться только что: ищем ещё раз
+      // организация с таким именем есть, но токен её не видит: ищем ещё раз, иначе заводим свою
+      console.log(err.message);
       await sleep(5000);
       [org] = await api('GET', '/organizations');
-      if (!org) throw err;
+      if (!org) org = await api('POST', '/organizations', { name: 'Desk Board' });
     }
   }
   console.log('организация', org.id);
