@@ -98,3 +98,28 @@ test('круговое меню создаёт заметку', async ({ page })
   await waitSaved(page);
   await expect(notes(page).first()).toContainText('Из меню');
 });
+
+test('новая доска с подсказками: заметки и нитки уже приколоты', async ({ page }) => {
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.bigbtn');
+  await expect(notes(page)).toHaveCount(5);
+  await expect(page.locator('.el.text')).toHaveText('Наша доска');
+  await expect(page.locator('#strings [data-link]')).toHaveCount(3);
+  await waitSaved(page);
+  await page.reload();
+  await expect(notes(page)).toHaveCount(5);
+});
+
+test('снятую заметку можно сразу вернуть', async ({ page }) => {
+  await createBoard(page);
+  await addNote(page, 500, 350, 'Не теряйся');
+  await notes(page).first().click();
+  await page.keyboard.press('Delete');
+  await expect(notes(page)).toHaveCount(0);
+  await page.locator('#undo button').click();
+  await expect(notes(page)).toHaveCount(1);
+  await waitSaved(page);
+  await page.reload();
+  await expect(notes(page).first()).toContainText('Не теряйся');
+});

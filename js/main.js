@@ -42,11 +42,21 @@ function showGate(html) {
   document.getElementById('app').hidden = true;
   gate.hidden = false;
   corkOn(gate);
-  gate.innerHTML = `<div class="card"><span class="tape"></span>${html}</div>`;
-  return gate.firstElementChild;
+  gate.innerHTML = `${DECO}<div class="card"><span class="tape"></span>${html}</div>`;
+  return gate.querySelector('.card');
 }
 
 const HEAD = '<h1>Доска</h1>';
+
+// Приколотые вокруг формы заметки, чтобы сразу было видно, что это за место
+const DECO = [
+  ['8%', '12%', '#f6d860', '#b3261e', -4, 'Идеи на выходные'],
+  ['74%', '9%', '#a8d8c0', '#2f7a5a', 3, 'Кто что берёт в поход?'],
+  ['6%', '62%', '#f4b6c2', '#6c3fa0', 2, 'Голосуем кнопками за фильм'],
+  ['76%', '58%', '#a9cbe8', '#d17a00', -3, 'Ничего не потеряется: всё в истории'],
+].map(([l, t, bg, pin, r, text], i) => `
+  <div class="deco" style="left:${l};top:${t};background:${bg};--r:${r}deg;animation-delay:${i * -1.3}s" aria-hidden="true">
+    <i class="pin" style="--p:${pin}"></i>${text}</div>`).join('');
 
 // Стартовый экран: создать доску
 function landing() {
@@ -58,6 +68,7 @@ function landing() {
       <input id="name" class="field" maxlength="40" autocomplete="nickname" required>
       <label for="title">Название доски</label>
       <input id="title" class="field" maxlength="80" placeholder="Новая доска">
+      <label class="check"><input type="checkbox" id="starter" checked> приколоть заметки-подсказки</label>
       <button class="bigbtn" type="submit">Создать доску</button>
       <div class="err" id="err" hidden></div>
     </form>
@@ -77,7 +88,7 @@ function landing() {
       const res = await rpc('create_board', { p_title: root.querySelector('#title').value, p_name: n, p_color: myColor() });
       store.set('owner-' + res.id, res.secret);
       history.replaceState(null, '', boardUrl(res.id));
-      route({ fresh: true });
+      route({ fresh: true, starter: root.querySelector('#starter').checked });
     } catch (err) {
       const el = root.querySelector('#err');
       el.textContent = err.message;
@@ -159,6 +170,7 @@ async function enter(id, opts) {
     title: info.title,
     me: info.me,
     fresh: opts.fresh,
+    starter: opts.starter,
     ownerLink: () => {
       const s = store.get('owner-' + id);
       return s ? boardUrl(id, s) : null;

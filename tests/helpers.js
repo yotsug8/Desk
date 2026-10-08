@@ -5,6 +5,7 @@ export async function createBoard(page, name = 'Аня', title = 'Тестова
   await page.goto('/');
   await page.fill('#name', name);
   await page.fill('#title', title);
+  await page.uncheck('#starter');
   await page.click('.bigbtn');
   await expect(page.locator('#app')).toBeVisible();
   await page.click('[data-close]');

@@ -98,7 +98,39 @@ export async function startBoard(opts) {
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
 
-  if (opts.fresh) inviteDialog();
+  B.loaded = true;
+  if (opts.fresh && opts.starter && canEdit()) seedBoard();
+  else if (opts.fresh) inviteDialog();
+}
+
+// Стартовые заметки новой доски: показывают, что тут можно делать
+async function seedBoard() {
+  const N = (x, y, color, text) => ({ type: 'note', x, y, w: 210, h: 170, data: { text, color } });
+  const items = [
+    { type: 'text', x: -330, y: -330, w: 300, h: 60, data: { text: 'Наша доска', size: 56, color: 'ink' } },
+    N(-360, -200, 'yellow', 'Дважды нажми на меня, чтобы писать'),
+    N(-90, -170, 'pink', 'Тяни меня куда угодно. Доску двигай пустым местом или двумя пальцами'),
+    N(190, -210, 'green', 'Правый клик или долгое нажатие: меню. Там голосование и «Сюда!»'),
+    N(-300, 90, 'blue', 'Зови друзей кнопкой «Пригласить». Там же твоя ссылка владельца, сохрани её'),
+    N(80, 110, 'white', 'Ошибся или кто-то напортил? Часы в углу вернут доску к любому моменту'),
+  ];
+  const ids = [];
+  for (const it of items) {
+    try {
+      const saved = await call('el_create', { p_board: B.id, p_type: it.type, p_x: it.x, p_y: it.y, p_w: it.w, p_h: it.h, p_data: it.data, p_id: uuid() });
+      applyRemote(saved);
+      ids.push(saved.id);
+      await new Promise((r) => setTimeout(r, 140));
+    } catch (err) { toast(err.message, true); return; }
+  }
+  for (const [a, b] of [[1, 2], [2, 3], [4, 5]]) {
+    try {
+      const saved = await call('el_create', { p_board: B.id, p_type: 'link', p_x: 0, p_y: 0, p_w: 20, p_h: 20, p_data: { from: ids[a], to: ids[b], color: 'red' }, p_id: uuid() });
+      applyRemote(saved);
+    } catch { /* без нитки тоже можно */ }
+  }
+  $('btnInvite').classList.add('wiggle');
+  fitCamera(true);
 }
 
 // ---------- Ярлыки, полочка, часы ----------
@@ -236,8 +268,12 @@ function onMember(m) {
 }
 
 function onPresence(people) {
+  const before = new Set(B.people.map((p) => p.u));
   B.people = people.filter((p) => p.u !== B.me.user_id);
-  renderPeople();
+  const fresh = B.seenPresence ? B.people.filter((p) => !before.has(p.u)) : [];
+  B.seenPresence = true;
+  renderPeople(new Set(fresh.map((p) => p.u)));
+  for (const p of fresh) toast(`${p.n} теперь здесь`);
   // курсоры и рамки ушедших
   const alive = new Set(B.people.map((p) => p.u));
   for (const [u, c] of cursors) if (!alive.has(u)) { c.node.remove(); cursors.delete(u); }
@@ -245,9 +281,9 @@ function onPresence(people) {
   if (B.follow && !alive.has(B.follow)) stopFollow();
 }
 
-function renderPeople() {
+function renderPeople(popped = new Set()) {
   $('people').innerHTML = B.people.map((p, i) => `
-    <button class="label av${B.follow === p.u ? ' on' : ''}" data-u="${esc(p.u)}" style="--c:${esc(p.c)};--r:${i % 2 ? 2 : -2}deg"
+    <button class="label av${B.follow === p.u ? ' on' : ''}${popped.has(p.u) ? ' pop' : ''}" data-u="${esc(p.u)}" style="--c:${esc(p.c)};--r:${i % 2 ? 2 : -2}deg"
       title="Смотреть глазами: ${esc(p.n)}">${esc(p.n)}</button>`).join('');
   $('people').onclick = (e) => {
     const b = e.target.closest('[data-u]');
@@ -307,10 +343,16 @@ function ripple(x, y, color) {
 
 // ---------- Камера и пробка ----------
 
-function fitCamera() {
+function fitCamera(animated) {
   const live = [...B.els.values()].filter((e) => !e.deleted_at && e.type !== 'link');
   if (!live.length) {
     B.cam = { x: innerWidth / 2, y: innerHeight / 2, s: 1 };
+  } else if (animated) {
+    const x1 = Math.min(...live.map((e) => e.x)), y1 = Math.min(...live.map((e) => e.y));
+    const x2 = Math.max(...live.map((e) => e.x + e.w)), y2 = Math.max(...live.map((e) => e.y + e.h));
+    const mx = Math.min(160, innerWidth * 0.12), my = Math.min(260, innerHeight * 0.3);
+    const sc = Math.max(0.3, Math.min(1, (innerWidth - mx) / (x2 - x1 + 1), (innerHeight - my) / (y2 - y1 + 1)));
+    return flyTo((x1 + x2) / 2, (y1 + y2) / 2, sc, 700);
   } else {
     const x1 = Math.min(...live.map((e) => e.x)), y1 = Math.min(...live.map((e) => e.y));
     const x2 = Math.max(...live.map((e) => e.x + e.w)), y2 = Math.max(...live.map((e) => e.y + e.h));
@@ -384,7 +426,9 @@ function viewOf(id) {
 function renderAll() {
   const ids = new Set([...B.els.keys(), ...(B.past ? B.past.keys() : [])]);
   for (const id of B.nodes.keys()) ids.add(id);
+  B.quiet = true; // массовая перерисовка без анимаций
   for (const id of ids) renderEl(id);
+  B.quiet = false;
   reorder();
   queueStrings();
 }
@@ -394,7 +438,16 @@ function renderEl(id) {
   let node = B.nodes.get(id);
   queueStrings();
   if (!v || v.type === 'link') {
-    if (node) { node.remove(); B.nodes.delete(id); }
+    if (node) {
+      B.nodes.delete(id);
+      if (B.quiet || B.past) node.remove();
+      else {
+        // снятая заметка падает с доски
+        node.classList.add('fall');
+        node.querySelector('.tag')?.remove();
+        setTimeout(() => node.remove(), 450);
+      }
+    }
     if (!v && B.sel.delete(id)) placeSelTools();
     if (!v && B.editing?.id === id) { B.editing.ta.blur(); B.editing = null; }
     if (!v && B.linkFrom === id) cancelLink();
@@ -407,12 +460,17 @@ function renderEl(id) {
     B.nodes.set(id, node);
     $('world').append(node);
     node.style.zIndex = 1e6;
+    if (B.loaded && !B.quiet && !B.past) {
+      node.classList.add('drop');
+      node.addEventListener('animationend', () => node.classList.remove('drop'), { once: true });
+    }
     queueReorder();
   }
   const note = v.type === 'note';
   const sel = B.sel.has(id);
   const color = v.data.color || (note ? 'yellow' : 'ink');
-  node.className = `el ${v.type} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}`;
+  const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.myDrag.has(id) ? ' lift' : '');
+  node.className = `el ${v.type} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
   node.style.setProperty('--rot', tilt(id) + 'deg');
   node.style.left = v.x + 'px';
   node.style.top = v.y + 'px';
@@ -568,6 +626,10 @@ function renderStrings() {
     st.hit.style.display = B.past ? 'none' : '';
   }
   for (const [id, st] of strings) if (!seen.has(id)) { st.g.remove(); strings.delete(id); }
+
+  // пустая доска: подсказка мелом к полочке
+  const empty = !B.past && canEdit() && ![...B.els.values()].some((r) => !r.deleted_at && r.type !== 'link');
+  $('hint').hidden = !empty;
 
   // нитка, которую сейчас тянут
   let temp = svg.querySelector('.temp');
@@ -788,7 +850,7 @@ async function createEl(type, wx, wy) {
   return id;
 }
 
-async function deleteSel() {
+async function deleteSel(quiet) {
   const ids = [...B.sel];
   if (!ids.length || !canEdit()) return;
   finishEdit();
@@ -801,11 +863,29 @@ async function deleteSel() {
   queueStrings();
   try {
     await call('el_delete', { p_ids: ids });
-    toast(ids.length > 1 ? `Снято: ${ids.length}. Вернуть можно через историю` : 'Снято. Вернуть можно через историю');
+    if (!quiet) undoChip(ids);
   } catch (err) {
     toast(err.message, true);
     resync();
   }
+}
+
+// Маленький ярлычок у полочки: снятое можно сразу вернуть
+let undoTimer = 0;
+function undoChip(ids) {
+  const box = $('undo');
+  box.innerHTML = `<span>${ids.length > 1 ? `снято: ${ids.length}` : 'снято'}</span><button class="minibtn" type="button">вернуть</button>`;
+  box.hidden = false;
+  clearTimeout(undoTimer);
+  undoTimer = setTimeout(() => { box.hidden = true; }, 5000);
+  box.querySelector('button').onclick = async () => {
+    box.hidden = true;
+    for (const id of ids) {
+      const r = B.els.get(id);
+      if (r) { B.els.set(id, { ...r, deleted_at: null }); renderEl(id); }
+    }
+    try { await call('el_restore', { p_ids: ids }); } catch (err) { toast(err.message, true); resync(); }
+  };
 }
 
 async function patchEl(id, patch) {
@@ -973,7 +1053,7 @@ function finishEdit() {
   B.live.hold([], null);
   if (row?.type === 'text' && !text.trim()) {
     B.sel = new Set([ed.id]);
-    deleteSel();
+    deleteSel(true);
     return;
   }
   renderEl(ed.id);
@@ -1298,7 +1378,7 @@ function bindInput() {
     } else if (g.mode === 'press' || g.mode === 'drag') {
       if (g.mode === 'press') {
         g.mode = 'drag';
-        for (const id of g.start.keys()) B.myDrag.add(id);
+        for (const id of g.start.keys()) { B.myDrag.add(id); B.nodes.get(id)?.classList.add('lift'); }
         B.live.hold([...g.start.keys()], 'move');
       }
       const items = [];
@@ -1381,6 +1461,7 @@ function bindInput() {
           .catch((err) => { toast(err.message, true); resync(); })
           .finally(() => ids.forEach((id) => B.myDrag.delete(id)));
       } else ids.forEach((id) => B.myDrag.delete(id));
+      ids.forEach((id) => B.nodes.get(id)?.classList.remove('lift'));
     }
     if (cur.mode === 'resize' && cur.held) {
       const r = B.els.get(cur.id);

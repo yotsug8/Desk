@@ -283,8 +283,9 @@ svg.i.s { width: 16px; height: 16px; }
 .modal .note-small { font-size: 12px; color: var(--mute); margin: -4px 0 12px; }
 .modal .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 
-.toasts { position: fixed; left: 50%; top: calc(var(--frame) + 76px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 60; pointer-events: none; }
-.toast { background: var(--paper); color: var(--ink); padding: 4px 14px; font-family: var(--hand); font-size: 22px; box-shadow: var(--shadow); max-width: 90vw; transform: rotate(-1deg); }
+.toasts { position: fixed; left: 50%; bottom: calc(var(--frame) + 96px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 60; pointer-events: none; }
+.toast { background: var(--paper); color: var(--ink); padding: 2px 10px; font-family: var(--hand); font-size: 18px; box-shadow: 1px 3px 6px #0004; max-width: 80vw; animation: toastIn .2s ease-out; }
+@keyframes toastIn { from { transform: translateY(8px); opacity: 0; } }
 .toast.bad { background: var(--red); color: #fff; }
 
 /* ---------- Телефон ---------- */
@@ -311,3 +312,48 @@ svg.i.s { width: 16px; height: 16px; }
   .minibtn { font-size: 18px; padding: 1px 8px; }
 }
 @media (min-width: 641px) { .lbl-short { display: none; } }
+
+/* ---------- Живость ---------- */
+/* заметку прикалывают: прыжок сверху */
+.el.drop { animation: drop .45s cubic-bezier(.2, 1.5, .4, 1) both; }
+@keyframes drop { from { transform: translateY(-36px) rotate(var(--rot, 0deg)) scale(1.08); opacity: 0; } }
+/* снятая заметка падает с доски */
+.el.fall { pointer-events: none; animation: fall .45s ease-in forwards; }
+@keyframes fall { to { transform: translateY(90px) rotate(calc(var(--rot, 0deg) + 14deg)); opacity: 0; } }
+/* заметку, которую тащат, приподнимает */
+.el.note.lift { scale: 1.04; box-shadow: 6px 16px 18px #00000059; transition: scale .12s, box-shadow .12s; }
+.el.note { transition: scale .12s, box-shadow .12s; }
+
+/* ярлычок «вернуть» у полочки */
+.undo { position: absolute; left: 50%; bottom: calc(var(--frame) + 96px); transform: translateX(-50%) rotate(-1deg); z-index: 26;
+  display: flex; align-items: center; gap: 10px; padding: 3px 4px 3px 12px; background: var(--paper); box-shadow: 1px 3px 6px #0004;
+  font-family: var(--hand); font-size: 19px; animation: toastIn .2s ease-out; }
+.undo .minibtn { font-size: 18px; padding: 0 8px; }
+
+/* кто пришёл: ярлык выпрыгивает */
+.av.pop { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1); }
+/* «Пригласить» покачивается на новой доске */
+.invite.wiggle { animation: wiggle 1.2s ease-in-out 3; }
+@keyframes wiggle { 0%, 100% { transform: rotate(2deg); } 25% { transform: rotate(-4deg); } 50% { transform: rotate(5deg); } 75% { transform: rotate(-2deg); } }
+
+/* подсказка мелом на пустой доске */
+.hint { position: absolute; left: 50%; bottom: calc(var(--frame) + 110px); transform: translateX(-60%); z-index: 15; pointer-events: none;
+  display: flex; align-items: flex-end; gap: 4px; font-family: var(--hand); font-size: 30px; line-height: 1.05; color: var(--chalk); text-shadow: 0 2px 3px #0006; }
+.hint svg { width: 110px; height: 82px; fill: none; stroke: var(--chalk); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 2px 2px #0006); margin-bottom: -40px; }
+
+/* стартовый экран: приколотые заметки вокруг формы */
+.gate { position: relative; overflow: hidden; }
+.deco { position: absolute; width: 170px; min-height: 130px; padding: 24px 14px 14px; font-family: var(--hand); font-size: 23px; line-height: 1.05;
+  box-shadow: 1px 4px 6px #0000004d; transform-origin: 50% 0; animation: sway 6s ease-in-out infinite; }
+.deco .pin { position: absolute; top: -8px; left: 50%; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fffa 0 3px, var(--p) 4px, #0006 12px); box-shadow: 2px 3px 3px #0005; }
+@keyframes sway { 0%, 100% { transform: rotate(var(--r)); } 50% { transform: rotate(calc(var(--r) + 1.5deg)); } }
+.gate .card { z-index: 1; }
+.check { display: flex !important; align-items: center; gap: 8px; font-size: 20px !important; margin-top: 14px !important; cursor: pointer; }
+.check input { width: 18px; height: 18px; accent-color: var(--red); }
+@media (max-width: 760px) { .deco { display: none; } }
+@media (max-width: 640px) {
+  .hint { font-size: 24px; transform: translateX(-50%); left: 40%; }
+  .toasts, .undo { bottom: 84px; }
+}
+@media (prefers-reduced-motion: reduce) { .el.drop, .el.fall, .deco, .invite.wiggle, .av.pop { animation: none; } }
