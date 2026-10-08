@@ -1,5 +1,6 @@
 // Доска: состояние, отрисовка элементов и ниток, камера, мышь и пальцы
-import { rpc, select } from './api.js';
+import { rpc, select, sb } from './api.js';
+import { SERVER } from './config.js';
 import { icon, CURSOR_SVG } from './icons.js';
 import { merge3, mapCaret } from './merge.js';
 import { toast, esc, openModal, copyText } from './ui.js';
@@ -11,6 +12,10 @@ const $ = (id) => document.getElementById(id);
 const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'white'];
 const TEXT_COLORS = ['ink', 'white', 'red'];
 const LINK_COLORS = ['red', 'ink', 'blue', 'white'];
+const DRAW_COLORS = ['white', 'ink', 'red', 'blue', 'yellow'];
+const LIST_COLORS = ['white', 'yellow', 'blue'];
+const DRAW = { white: '#fdf3df', ink: '#2a1f14', red: '#b3261e', blue: '#2f5d8a', yellow: '#f6d860' };
+const WIDTHS = [3, 6, 12];
 const SWATCH = {
   yellow: '#f6d860', pink: '#f4b6c2', green: '#a8d8c0', blue: '#a9cbe8', white: '#fbf7ec',
   ink: '#2a1f14', red: '#b3261e',
@@ -156,8 +161,11 @@ function tickClock() {
 
 const LEDGE = [
   { tool: 'note', label: 'заметка', obj: '<i class="o-pad"></i>', edit: true, key: 'N' },
+  { tool: 'list', label: 'список', obj: '<i class="o-card"></i>', edit: true, key: 'K' },
   { tool: 'text', label: 'надпись', obj: '<i class="o-marker"></i>', edit: true, key: 'T' },
+  { tool: 'draw', label: 'мелок', obj: '<i class="o-chalk"></i>', edit: true, key: 'D' },
   { tool: 'link', label: 'нитка', obj: '<i class="o-yarn"></i>', edit: true, key: 'L' },
+  { act: 'photo', label: 'фото', obj: '<i class="o-photo"></i>', edit: true, key: 'P' },
 ];
 
 function buildLedge() {
@@ -170,8 +178,7 @@ function buildLedge() {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.tool) setTool(B.tool === b.dataset.tool ? null : b.dataset.tool);
-    if (b.dataset.act === 'vote') voteAction();
-    if (b.dataset.act === 'summon') summon();
+    if (b.dataset.act === 'photo') pickPhoto();
   };
 }
 
@@ -181,6 +188,155 @@ function setTool(t) {
   for (const b of $('ledge').children) b.classList.toggle('on', !!t && b.dataset.tool === t);
   $('stage').className = 'stage' + (t ? ' tool-' + t : '');
   if (t === 'link') toast('Нажмите на первый элемент, потом на второй');
+  buildPens();
+}
+
+// ---------- Мелок ----------
+
+const pen = (() => {
+  try { return { color: 'white', width: 6, ...JSON.parse(localStorage.getItem('desk-pen') || '{}'), eraser: false }; } catch { return { color: 'white', width: 6, eraser: false }; }
+})();
+
+function buildPens() {
+  const box = $('pens');
+  if (B.tool !== 'draw') { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = DRAW_COLORS.map((c) => `<button class="sw${!pen.eraser && pen.color === c ? ' on' : ''}" data-pc="${c}" style="background:${DRAW[c]}" aria-label="Цвет мелка"></button>`).join('')
+    + '<span class="vsep"></span>'
+    + WIDTHS.map((w) => `<button class="pw${!pen.eraser && pen.width === w ? ' on' : ''}" data-pw="${w}" aria-label="Толщина"><i style="width:${w + 2}px;height:${w + 2}px"></i></button>`).join('')
+    + '<span class="vsep"></span>'
+    + `<button class="minibtn${pen.eraser ? ' go' : ''}" data-er>ластик</button>`;
+  box.onclick = (e) => {
+    const c = e.target.closest('[data-pc]')?.dataset.pc;
+    const w = e.target.closest('[data-pw]')?.dataset.pw;
+    if (c) { pen.color = c; pen.eraser = false; }
+    if (w) { pen.width = Number(w); pen.eraser = false; }
+    if (e.target.closest('[data-er]')) pen.eraser = !pen.eraser;
+    try { localStorage.setItem('desk-pen', JSON.stringify({ color: pen.color, width: pen.width })); } catch { /* не важно */ }
+    buildPens();
+  };
+}
+
+const parsePoints = (str) => (str || '').split(' ').map((p) => p.split(',').map(Number));
+
+// Плавная линия через середины отрезков
+function smoothPath(pts) {
+  if (!pts.length) return '';
+  if (pts.length < 3) {
+    const [a, b = a] = pts;
+    return `M${a[0]} ${a[1]} L${b[0] + 0.01} ${b[1]}`;
+  }
+  let d = `M${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
+    d += ` Q${pts[i][0]} ${pts[i][1]} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+  }
+  const l = pts[pts.length - 1];
+  return d + ` L${l[0]} ${l[1]}`;
+}
+
+// Упрощение линии (Рамер, Дуглас, Пекер): меньше точек при том же виде
+function simplify(pts, eps) {
+  if (pts.length < 3) return pts;
+  const [a, b] = [pts[0], pts[pts.length - 1]];
+  let max = 0, idx = 0;
+  const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = Math.abs(dy * pts[i][0] - dx * pts[i][1] + b[0] * a[1] - b[1] * a[0]) / len;
+    if (d > max) { max = d; idx = i; }
+  }
+  if (max <= eps) return [a, b];
+  return [...simplify(pts.slice(0, idx + 1), eps).slice(0, -1), ...simplify(pts.slice(idx), eps)];
+}
+
+// Готовую линию сохраняем отдельным элементом: её можно двигать, снимать и откатывать
+async function saveStroke(raw) {
+  let pts = simplify(raw, 0.8 / B.cam.s);
+  if (pts.length > 1500) pts = pts.filter((_, i) => i % Math.ceil(pts.length / 1500) === 0);
+  const pad = pen.width + 2;
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  const x = Math.floor(Math.min(...xs) - pad), y = Math.floor(Math.min(...ys) - pad);
+  const w = Math.max(20, Math.ceil(Math.max(...xs) + pad - x)), h = Math.max(20, Math.ceil(Math.max(...ys) + pad - y));
+  const points = pts.map(([px, py]) => `${Math.round(px - x)},${Math.round(py - y)}`).join(' ');
+  const id = uuid();
+  const data = { points, color: pen.color, width: pen.width };
+  B.els.set(id, {
+    id, board_id: B.id, type: 'draw', x, y, w, h, z: Date.now(), data,
+    version: 0, locked: false, created_by: B.me.user_id, updated_by: B.me.user_id, deleted_at: null,
+  });
+  B.quiet = true; renderEl(id); B.quiet = false;
+  try {
+    applyRemote(await call('el_create', { p_board: B.id, p_type: 'draw', p_x: x, p_y: y, p_w: w, p_h: h, p_data: data, p_id: id }));
+  } catch (err) {
+    toast(err.message, true);
+    B.els.delete(id);
+    renderEl(id);
+  }
+}
+
+// ---------- Фото ----------
+
+function pickPhoto() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.hidden = true;
+  document.body.append(input);
+  input.onchange = () => { if (input.files[0]) addPhoto(input.files[0]); input.remove(); };
+  input.addEventListener('cancel', () => input.remove());
+  input.click();
+}
+
+// Сжимаем до 1400 px по длинной стороне и кладём в хранилище доски
+async function addPhoto(file, at) {
+  if (!canEdit() || !file.type.startsWith('image/')) return;
+  const pos = at || toWorld(innerWidth / 2, innerHeight / 2);
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(bmp.width * k);
+    cv.height = Math.round(bmp.height * k);
+    cv.getContext('2d').drawImage(bmp, 0, 0, cv.width, cv.height);
+    const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.82));
+    const src = `${B.id}/${uuid()}.jpg`;
+    B.pending++; updateStatus();
+    const up = await sb.storage.from('images').upload(src, blob, { contentType: 'image/jpeg', upsert: false });
+    B.pending--; updateStatus();
+    if (up.error) throw new Error('Не удалось загрузить фото');
+    const w = 260, h = Math.round(260 * cv.height / cv.width) + 64;
+    const saved = await call('el_create', {
+      p_board: B.id, p_type: 'image', p_x: Math.round(pos.x - w / 2), p_y: Math.round(pos.y - h / 2), p_w: w, p_h: h,
+      p_data: { src, text: '' }, p_id: uuid(),
+    });
+    applyRemote(saved);
+    setSelection([saved.id]);
+  } catch (err) {
+    toast(err instanceof DOMException ? 'Не получилось открыть картинку' : err.message || 'Не удалось добавить фото', true);
+  }
+}
+
+// ---------- Списки ----------
+
+// Галочка: переключаем строку; если кто-то успел поменять список, переключаем в свежем
+async function toggleItem(id, idx) {
+  const flip = (text) => {
+    const ls = text.split('\n');
+    if (ls[idx]?.startsWith('[x]')) ls[idx] = '[ ]' + ls[idx].slice(3);
+    else if (ls[idx]?.startsWith('[ ]')) ls[idx] = '[x]' + ls[idx].slice(3);
+    return ls.join('\n');
+  };
+  const r = B.els.get(id);
+  if (!r || !canEdit()) return;
+  const text = flip(r.data.text || '');
+  B.els.set(id, { ...r, data: { ...r.data, text } });
+  renderEl(id);
+  await r._creating;
+  try {
+    let res = await call('el_update', { p_id: id, p_base_version: r.version, p_patch: { data: { text } } });
+    if (!res.ok) res = await call('el_update', { p_id: id, p_base_version: res.element.version, p_patch: { data: { text: flip(res.element.data.text || '') } } });
+    if (res.ok) applyRemote(res.element);
+  } catch (err) { toast(err.message, true); resync(); }
 }
 
 const isOwner = () => B.me.role === 'owner';
@@ -456,7 +612,7 @@ function renderEl(id) {
   if (!node) {
     node = document.createElement('div');
     node.dataset.id = id;
-    node.innerHTML = '<div class="body"></div>';
+    node.innerHTML = SKELETON[v.type] || '<div class="body"></div>';
     B.nodes.set(id, node);
     $('world').append(node);
     node.style.zIndex = 1e6;
@@ -466,39 +622,66 @@ function renderEl(id) {
     }
     queueReorder();
   }
-  const note = v.type === 'note';
+  const t = v.type;
   const sel = B.sel.has(id);
-  const color = v.data.color || (note ? 'yellow' : 'ink');
+  const color = v.data.color || DEFAULT_COLOR[t] || 'ink';
   const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.myDrag.has(id) ? ' lift' : '');
-  node.className = `el ${v.type} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
-  node.style.setProperty('--rot', tilt(id) + 'deg');
+  node.className = `el ${t} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
+  if (t !== 'draw') node.style.setProperty('--rot', tilt(id) + 'deg');
   node.style.left = v.x + 'px';
   node.style.top = v.y + 'px';
-  if (note) {
+  if (t === 'note' || t === 'draw') {
     node.style.width = v.w + 'px';
     node.style.height = v.h + 'px';
+  } else if (t === 'list' || t === 'image') {
+    node.style.width = v.w + 'px';
   } else {
     // надпись: размер по тексту
     node.style.fontSize = (v.data.size || 44) + 'px';
   }
   if (node.dataset.z !== String(v.z)) { node.dataset.z = v.z; queueReorder(); }
 
-  const body = node.querySelector('.body');
-  const editing = B.editing?.id === id;
-  body.style.visibility = editing ? 'hidden' : '';
-  body.dataset.ph = note ? 'пустая заметка' : 'надпись';
-  if (!editing) body.textContent = v.data.text || '';
+  if (t === 'draw') {
+    // рисунок: путь меняем, только если поменялись точки
+    const key = `${v.data.points}|${v.w}|${v.h}`;
+    if (node.dataset.key !== key) {
+      node.dataset.key = key;
+      const svg = node.querySelector('svg');
+      svg.setAttribute('viewBox', `0 0 ${v.w} ${v.h}`);
+      const d = smoothPath(parsePoints(v.data.points));
+      for (const p of svg.querySelectorAll('path')) p.setAttribute('d', d);
+    }
+    const path = node.querySelector('path.ink');
+    path.setAttribute('stroke', DRAW[color] || DRAW.white);
+    path.setAttribute('stroke-width', v.data.width || 6);
+  } else {
+    if (t === 'image') {
+      const img = node.querySelector('img');
+      const src = imageURL(v.data.src);
+      if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    }
+    const body = node.querySelector('.body');
+    const editing = B.editing?.id === id;
+    body.style.visibility = editing ? 'hidden' : '';
+    body.dataset.ph = PLACEHOLDER[t] || '';
+    if (!editing) {
+      if (t === 'list') renderList(body, v.data.text || '');
+      else body.textContent = v.data.text || '';
+    }
+  }
 
-  // кнопка цвета автора и подпись
+  // кнопка цвета автора
   let pin = node.querySelector('.pin');
-  if (note) {
+  if (t === 'note' || t === 'list') {
     if (!pin) { pin = document.createElement('i'); pin.className = 'pin'; node.append(pin); }
     pin.style.setProperty('--p', v.created_by ? memberColor(v.created_by) : '#b3261e');
-    node.title = v.created_by ? memberName(v.created_by) : '';
   } else pin?.remove();
+  node.title = v.created_by ? memberName(v.created_by) : '';
 
   let grip = node.querySelector('.grip');
-  if (!grip && canEdit()) { grip = document.createElement('div'); grip.className = 'grip'; node.append(grip); }
+  if (!grip && canEdit() && (t === 'note' || t === 'list' || t === 'image')) {
+    grip = document.createElement('div'); grip.className = 'grip'; node.append(grip);
+  }
 
   // чужая рамка: кто двигает или правит
   const hold = B.past ? null : B.holds.get(id);
@@ -514,6 +697,26 @@ function renderEl(id) {
   renderVotes(id);
 }
 
+// Заготовки разметки для типов элементов
+const SKELETON = {
+  draw: '<svg class="ink-svg"><path class="hit"/><path class="ink"/></svg>',
+  list: '<div class="body list-body"></div>',
+  image: '<span class="tape"></span><img alt="" draggable="false"><div class="cap edit-host"><div class="body"></div></div>',
+};
+const DEFAULT_COLOR = { note: 'yellow', text: 'ink', list: 'white', draw: 'white' };
+const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись', list: 'список', image: 'подпись' };
+
+// Список: строки «[ ] дело» и «[x] дело» становятся галочками, остальные заголовками
+function renderList(body, text) {
+  body.innerHTML = text.split('\n').map((line, i) => {
+    const m = line.match(/^\[( |x)\] ?(.*)$/);
+    if (!m) return line.trim() ? `<div class="lh">${esc(line)}</div>` : '';
+    return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${esc(m[2]) || '&nbsp;'}</span></div>`;
+  }).join('');
+}
+
+const imageURL = (src) => `${SERVER.url}/storage/v1/object/public/images/${src}`;
+
 // Быстрый путь для перетаскивания: только координаты и размер
 function moveNode(id) {
   const node = B.nodes.get(id);
@@ -524,7 +727,7 @@ function moveNode(id) {
   if (r.type === 'note') {
     node.style.width = r.w + 'px';
     node.style.height = r.h + 'px';
-  }
+  } else if (r.type === 'list' || r.type === 'image') node.style.width = r.w + 'px';
   queueStrings();
 }
 
@@ -548,10 +751,10 @@ function anchor(id) {
   const v = viewOf(id);
   if (!v || v.type === 'link') return null;
   const node = B.nodes.get(id);
-  const w = v.type === 'note' ? v.w : node?.offsetWidth || v.w;
-  const h = v.type === 'note' ? v.h : node?.offsetHeight || v.h;
+  const w = v.type === 'note' || v.type === 'draw' ? v.w : node?.offsetWidth || v.w;
+  const h = v.type === 'note' || v.type === 'draw' ? v.h : node?.offsetHeight || v.h;
   const cx = v.x + w / 2, cy = v.y + h / 2;
-  if (v.type !== 'note') return { x: cx, y: cy };
+  if (!['note', 'list', 'image'].includes(v.type)) return { x: cx, y: cy };
   const a = (Number(tilt(id)) * Math.PI) / 180;
   const dx = 0, dy = -h / 2 + 3;
   return { x: cx + dx * Math.cos(a) - dy * Math.sin(a), y: cy + dx * Math.sin(a) + dy * Math.cos(a) };
@@ -639,6 +842,18 @@ function renderStrings() {
     temp.setAttribute('d', sagPath(from, tempEnd));
   } else temp?.remove();
 }
+
+// Линия мелка, пока её ведут: рисуем в слое ниток, без сохранения
+function drawTemp(pts) {
+  const svg = $('strings');
+  let p = svg.querySelector('.temp-ink');
+  if (!pts) { p?.remove(); return; }
+  if (!p) { p = svgEl('path', { class: 'ink temp-ink' }); svg.append(p); }
+  p.setAttribute('stroke', DRAW[pen.color] || DRAW.white);
+  p.setAttribute('stroke-width', pen.width);
+  p.setAttribute('d', smoothPath(pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10])));
+}
+
 
 function startLink(id) {
   B.linkFrom = id;
@@ -821,12 +1036,13 @@ function onHold({ u, ids, m }) {
 // ---------- Создание, удаление, правка ----------
 
 async function createEl(type, wx, wy) {
-  const note = type === 'note';
-  const w = note ? 200 : 300, h = note ? 170 : 50;
+  const note = type === 'note' || type === 'list';
+  const w = type === 'list' ? 240 : note ? 200 : 300, h = type === 'list' ? 160 : note ? 170 : 50;
   const id = uuid();
   const row = {
     id, board_id: B.id, type, x: Math.round(wx - (note ? w / 2 : 12)), y: Math.round(wy - (note ? h / 2 : 25)), w, h,
-    z: Date.now(), data: note ? { text: '', color: B.lastColor || 'yellow' } : { text: '', size: 44, color: 'ink' },
+    z: Date.now(), data: type === 'list' ? { text: 'Список\n[ ] ', color: 'white' }
+      : note ? { text: '', color: B.lastColor || 'yellow' } : { text: '', size: 44, color: 'ink' },
     version: 0, locked: false, created_by: B.me.user_id, updated_by: B.me.user_id, deleted_at: null,
   };
   B.els.set(id, row);
@@ -905,8 +1121,7 @@ function setColor(color) {
   for (const id of B.sel) {
     const r = B.els.get(id);
     if (!r) continue;
-    const ok = (r.type === 'note' && NOTE_COLORS.includes(color)) || (r.type === 'text' && TEXT_COLORS.includes(color))
-      || (r.type === 'link' && LINK_COLORS.includes(color));
+    const ok = ({ note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS }[r.type] || []).includes(color);
     if (!ok) continue;
     if (r.type === 'note') B.lastColor = color;
     B.els.set(id, { ...r, data: { ...r.data, color } });
@@ -952,7 +1167,7 @@ function startEdit(id) {
   ta.maxLength = 5000;
   ta.spellcheck = true;
   ta.setAttribute('aria-label', 'Текст');
-  node.append(ta);
+  (node.querySelector('.edit-host') || node).append(ta);
   const ed = { id, base: ta.value, version: row.version, ta, timer: 0, saving: false, again: false };
   B.editing = ed;
   B.sel = new Set([id]);
@@ -968,6 +1183,19 @@ function startEdit(id) {
   ta.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Escape') finishEdit();
+    // в списке Enter после пункта сразу начинает новый пункт
+    if (e.key === 'Enter' && row.type === 'list' && !e.shiftKey) {
+      const before = ta.value.slice(0, ta.selectionStart);
+      const line = before.slice(before.lastIndexOf('\n') + 1);
+      if (/^\[( |x)\]/.test(line)) {
+        e.preventDefault();
+        if (line.trim().length <= 3) {
+          // пустой пункт: выходим из списка
+          ta.setRangeText('', ta.selectionStart - line.length, ta.selectionStart, 'end');
+        } else ta.setRangeText('\n[ ] ', ta.selectionStart, ta.selectionEnd, 'end');
+        ta.dispatchEvent(new Event('input'));
+      }
+    }
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (B.editing === ed && document.activeElement !== ta) finishEdit(); }, 0));
   B.live.hold([id], 'edit');
@@ -978,7 +1206,7 @@ function startEdit(id) {
 function sizeTextEl(ed) {
   const node = B.nodes.get(ed.id);
   const row = B.els.get(ed.id);
-  if (!node || row?.type !== 'text') return;
+  if (!node || !['text', 'list', 'image'].includes(row?.type)) return;
   node.querySelector('.body').textContent = ed.ta.value + '​';
   queueStrings();
 }
@@ -1057,7 +1285,7 @@ function finishEdit() {
     return;
   }
   renderEl(ed.id);
-  if (row?.type === 'text') syncTextBox(ed.id);
+  if (['text', 'list', 'image'].includes(row?.type)) syncTextBox(ed.id);
   placeSelTools();
 }
 
@@ -1085,10 +1313,11 @@ function placeSelTools(force) {
   const key = rows.map((r) => r.id + r.data.color + r.data.size).join();
   if (force || box.dataset.key !== key) {
     box.dataset.key = key;
-    const palette = types.size === 1 ? { note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS }[rows[0].type] : null;
+    const palette = types.size === 1 ? { note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS }[rows[0].type] : null;
+    const tone = (c) => (types.has('link') ? STRING[c] : types.has('draw') ? DRAW[c] : SWATCH[c]);
     const cur = rows.every((r) => r.data.color === rows[0].data.color) ? rows[0].data.color : null;
     box.innerHTML = [
-      palette ? palette.map((c) => `<button class="sw${c === cur ? ' on' : ''}" data-color="${c}" style="background:${types.has('link') ? STRING[c] : SWATCH[c]}" aria-label="Цвет"></button>`).join('') + '<span class="vsep"></span>' : '',
+      palette ? palette.map((c) => `<button class="sw${c === cur ? ' on' : ''}" data-color="${c}" style="background:${tone(c)}" aria-label="Цвет"></button>`).join('') + '<span class="vsep"></span>' : '',
       types.size === 1 && types.has('text') ? `<button class="t" data-act="smaller" title="Мельче">${icon('smaller')}</button><button class="t" data-act="bigger" title="Крупнее">${icon('bigger')}</button><span class="vsep"></span>` : '',
       types.has('link') ? '' : `<button class="t" data-act="front" title="Наверх">${icon('front')}</button>`,
       `<button class="t danger" data-act="delete" title="Снять с доски" aria-label="Удалить">${icon('trash')}</button>`,
@@ -1201,7 +1430,7 @@ function openRadial(sx, sy, target) {
     items = canEdit() ? [['Писать', 'edit'], ['Нитка', 'link'], ['Наверх', 'front'], ['Снять', 'del', true]] : [];
     if (roundActive()) items.push(['Голос', 'vote']);
   } else {
-    items = canEdit() ? [['Заметка', 'note'], ['Надпись', 'text'], ['Сюда!', 'summon'], ['Голосо-вание', 'voting']] : [['Сюда!', 'summon']];
+    items = canEdit() ? [['Заметка', 'note'], ['Список', 'list'], ['Надпись', 'text'], ['Сюда!', 'summon'], ['Голосо-вание', 'voting']] : [['Сюда!', 'summon']];
   }
   if (!items.length) return;
   const box = $('radial');
@@ -1217,7 +1446,7 @@ function openRadial(sx, sy, target) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     closeRadial();
-    if (act === 'note' || act === 'text') createEl(act, w.x, w.y);
+    if (act === 'note' || act === 'text' || act === 'list') createEl(act, w.x, w.y);
     if (act === 'summon') summon();
     if (act === 'voting') voteAction();
     if (act === 'edit') startEdit(id);
@@ -1249,6 +1478,14 @@ function bindInput() {
     return null;
   };
 
+  // ластик: линии мелка под пальцем помечаются и снимаются разом при отпускании
+  const eraseAt = (e) => {
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.el.draw');
+    if (!el || el.classList.contains('erasing')) return;
+    el.classList.add('erasing');
+    g.ids.add(el.dataset.id);
+  };
+
   stage.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (B.past) return;
@@ -1268,6 +1505,7 @@ function bindInput() {
     if (pts.size === 2) {
       // два пальца: масштаб и сдвиг; начатое перетаскивание откатываем к началу
       if (g?.mode === 'drag' || g?.mode === 'resize') endGesture(true);
+      if (g?.mode === 'stroke') drawTemp(null);
       manualCamera();
       const [a, b] = [...pts.values()];
       g = { mode: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
@@ -1281,7 +1519,7 @@ function bindInput() {
     const panBtn = e.button === 1 || B.past;
 
     // долгое нажатие пальцем открывает круговое меню
-    if (e.pointerType !== 'mouse' && !B.past) {
+    if (e.pointerType !== 'mouse' && !B.past && B.tool !== 'draw') {
       longPress = setTimeout(() => {
         if (g && !g.moved) {
           if (g.mode === 'drag' || g.mode === 'press') endGesture(true);
@@ -1291,7 +1529,24 @@ function bindInput() {
       }, 550);
     }
 
-    if (!panBtn && !t && (B.tool === 'note' || B.tool === 'text') && canEdit()) {
+    // галочка в списке
+    const box = e.target.closest('[data-li]');
+    if (!panBtn && box && canEdit() && !B.tool) {
+      const elId = box.closest('.el').dataset.id;
+      if (B.editing?.id !== elId) { toggleItem(elId, Number(box.dataset.li)); g = null; return; }
+    }
+
+    // мелок рисует поверх всего, ластик стирает линии мелка
+    if (!panBtn && B.tool === 'draw' && canEdit()) {
+      e.preventDefault();
+      if (B.editing) finishEdit();
+      if (pen.eraser) { g = { mode: 'erase', ids: new Set() }; eraseAt(e); return; }
+      g = { mode: 'stroke', pts: [[w.x, w.y]] };
+      drawTemp(g.pts);
+      return;
+    }
+
+    if (!panBtn && !t && (B.tool === 'note' || B.tool === 'text' || B.tool === 'list') && canEdit()) {
       e.preventDefault();
       const tool = B.tool;
       setTool(null);
@@ -1352,6 +1607,18 @@ function bindInput() {
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (!g) return;
+
+    if (g.mode === 'stroke') {
+      // промежуточные точки быстрых движений, чтобы линия была гладкой
+      for (const ev of e.getCoalescedEvents?.() || [e]) {
+        const q = toWorld(ev.clientX, ev.clientY);
+        const last = g.pts[g.pts.length - 1];
+        if (Math.hypot(q.x - last[0], q.y - last[1]) * B.cam.s > 1.5) g.pts.push([q.x, q.y]);
+      }
+      drawTemp(g.pts);
+      return;
+    }
+    if (g.mode === 'erase') { eraseAt(e); return; }
 
     if (g.mode === 'pinch' && pts.size >= 2) {
       const [a, b] = [...pts.values()];
@@ -1416,6 +1683,19 @@ function bindInput() {
       return;
     }
     if (pts.size) return;
+    if (g?.mode === 'stroke') {
+      const raw = g.pts;
+      g = null;
+      drawTemp(null);
+      saveStroke(raw.length === 1 ? [raw[0], raw[0]] : raw);
+      return;
+    }
+    if (g?.mode === 'erase') {
+      const ids = [...g.ids];
+      g = null;
+      if (ids.length) { B.sel = new Set(ids); deleteSel(); }
+      return;
+    }
     if (g?.mode === 'link') {
       // отпустили над другим элементом: нитка готова; над тем же: ждём второго касания
       const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.el');
@@ -1484,6 +1764,18 @@ function bindInput() {
     }
   }, { passive: false });
 
+  // фото из буфера обмена и перетаскиванием файла на доску
+  addEventListener('paste', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/'));
+    if (f) { e.preventDefault(); addPhoto(f); }
+  });
+  stage.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  stage.addEventListener('drop', (e) => {
+    const f = [...e.dataTransfer.files].find((x) => x.type.startsWith('image/'));
+    if (f) { e.preventDefault(); addPhoto(f, toWorld(e.clientX, e.clientY)); }
+  });
+
   // Safari: жесты тачпада
   document.addEventListener('gesturestart', (e) => e.preventDefault());
 
@@ -1503,7 +1795,9 @@ function bindInput() {
     else if (e.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
     else if (e.key === '0') zoomAt(innerWidth / 2, innerHeight / 2, 1 / B.cam.s);
     else if (!e.ctrlKey && !e.metaKey && !e.altKey && canEdit()) {
-      const k = { n: 'note', t: 'text', l: 'link' }[e.key.toLowerCase()];
+      const key = e.key.toLowerCase();
+      if (key === 'p') return pickPhoto();
+      const k = { n: 'note', t: 'text', l: 'link', k: 'list', d: 'draw' }[key];
       if (k) setTool(B.tool === k ? null : k);
     }
   });
