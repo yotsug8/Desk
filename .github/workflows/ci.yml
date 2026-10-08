@@ -39,43 +39,24 @@ jobs:
             test-results
           retention-days: 7
 
-  # Выкладка только с main и только после зелёных тестов
-  deploy:
+  # Боевая база Supabase: создаётся и обновляется после зелёных тестов, если задан секрет.
+  # Скрипт повторно безопасен: проект ищется по имени, применённые миграции пропускаются.
+  prod-db:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
     env:
-      HAS_DB_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN != '' }}
-    environment:
-      name: github-pages
-      url: ${{ steps.pages.outputs.page_url }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - name: Миграции в боевую базу
-        if: env.HAS_DB_TOKEN == 'true'
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      - name: Подъём и миграции
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: node scripts/setup-prod.mjs
+      - name: Публичные адрес и ключ для сайта
+        if: env.SUPABASE_ACCESS_TOKEN != ''
         run: |
-          npx supabase link --project-ref "$SUPABASE_PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
-          npx supabase db push -p "$SUPABASE_DB_PASSWORD"
-      - name: Сборка сайта
-        run: |
-          mkdir _site
-          cp -r index.html css js _site/
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-      - id: pages
-        uses: actions/deploy-pages@v4
+          grep -A3 'const PROD' js/config.js
+          grep -A3 'const PROD' js/config.js >> "$GITHUB_STEP_SUMMARY"
