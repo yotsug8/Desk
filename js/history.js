@@ -46,7 +46,7 @@ export function initHistory(B, d) {
     const t = (s?.data?.text || '').replace(/\s+/g, ' ').trim();
     return t ? `«${t.length > 28 ? t.slice(0, 28) + '...' : t}»` : '';
   };
-  const kind = (s) => (s?.type === 'text' ? 'текст' : 'заметка');
+  const kind = (s) => ({ text: 'надпись', link: 'нитка' }[s?.type] || 'заметка');
 
   function describe(g) {
     const r = g.row;
@@ -57,8 +57,8 @@ export function initHistory(B, d) {
       case 'join': return 'Вход на доску';
       case 'rename': return `Новое название «${esc(a?.title)}»`;
       case 'rollback': return n > 1 ? `Откат доски, изменений: ${n}` : 'Откат доски';
-      case 'create': return `Новая ${kind(a) === 'текст' ? 'надпись' : 'заметка'} ${esc(snip(a))}`;
-      case 'delete': return n > 1 ? `Удаление, элементов: ${n}` : `Удаление ${esc(snip(b) || kind(b))}`;
+      case 'create': return a?.type === 'link' ? 'Натянута нитка' : `Новая ${kind(a)} ${esc(snip(a))}`;
+      case 'delete': return n > 1 ? `Снято с доски: ${n}` : b?.type === 'link' ? 'Снята нитка' : `Снято ${esc(snip(b) || kind(b))}`;
       case 'restore': return `Возврат ${esc(snip(a) || kind(a))}`;
       case 'update': {
         const what = esc(snip(a) || kind(a));
@@ -79,16 +79,19 @@ export function initHistory(B, d) {
     const canRoll = ['owner', 'editor'].includes(B.me.role);
     panel.innerHTML = `
       <div class="hist-head">
-        <h3>История<button type="button" data-close aria-label="Закрыть">${icon('close', true)}</button></h3>
-        <p>Выберите момент, чтобы посмотреть доску в прошлом${canRoll ? ' и вернуть её' : ''}</p>
-        ${groups.length > 1 ? `<input class="slider" type="range" min="0" max="${groups.length - 1}" value="${groups.length - 1 - pick}" aria-label="Момент в истории">` : ''}
+        <h3>История<span class="sp2"></span>
+          ${groups.length > 1 ? `<button type="button" data-play title="Проиграть историю" aria-label="Проиграть">${icon(playing ? 'stop' : 'play', true)}</button>` : ''}
+          <button type="button" data-close aria-label="Закрыть">${icon('close', true)}</button></h3>
+        <p>Выберите момент, чтобы увидеть доску в прошлом${canRoll ? ' и вернуть её' : ''}</p>
+        ${groups.length > 1 ? `<div class="row"><input class="slider" type="range" min="0" max="${groups.length - 1}" value="${groups.length - 1 - pick}" aria-label="Момент в истории"></div>` : ''}
       </div>
       <div class="hist-list">${groups.length ? groups.map((g, i) => `
         <button class="ev${i === pick ? ' cur2' : ''}${i < pick ? ' fut' : ''}" data-i="${i}">
-          <span class="d" style="background:${esc(d.memberColor(g.row.user_id))}"></span>
-          <span><span class="what">${describe(g)}</span><br><span class="w">${esc(d.memberName(g.row.user_id))}, ${fmtTime(g.row.created_at)}</span></span>
+          <span class="who" style="--c:${esc(d.memberColor(g.row.user_id))}">${esc(d.memberName(g.row.user_id))}</span><span class="what">${describe(g)}</span>
+          <span class="w">${fmtTime(g.row.created_at)}</span>
         </button>`).join('') : '<div class="hist-empty">Пока пусто</div>'}
       </div>`;
+    panel.querySelector('[data-play]')?.addEventListener('click', () => (playing ? stopPlay() : play()));
     panel.querySelector('[data-close]').onclick = close;
     const slider = panel.querySelector('.slider');
     if (slider) slider.oninput = () => choose(groups.length - 1 - Number(slider.value), false);
@@ -109,10 +112,8 @@ export function initHistory(B, d) {
       const canRoll = ['owner', 'editor'].includes(B.me.role);
       bar.hidden = false;
       bar.innerHTML = `<span>Доска на ${esc(fmtTime(g.row.created_at))}</span>
-        ${canRoll ? `<button class="card btn go" data-go><span class="lbl-long">Вернуть доску к этому моменту</span><span class="lbl-short">Вернуть</span></button>` : ''}
-        <button class="card btn" data-now>Сейчас</button>`;
-      const short = bar.querySelector('.lbl-short');
-      if (short && innerWidth > 640) short.remove();
+        ${canRoll ? `<button class="minibtn go" data-go><span class="lbl-long">вернуть доску к этому моменту</span><span class="lbl-short">вернуть</span></button>` : ''}
+        <button class="minibtn" data-now>сейчас</button>`;
       bar.querySelector('[data-now]').onclick = () => choose(0);
       const go = bar.querySelector('[data-go]');
       if (go) go.onclick = async () => {
@@ -133,6 +134,26 @@ export function initHistory(B, d) {
     }
   }
 
+  // Проиграть историю: от самого старого загруженного момента до сейчас
+  let playing = 0;
+  function play() {
+    if (groups.length < 2) return;
+    let i = groups.length - 1;
+    playing = setInterval(() => {
+      i--;
+      if (i <= 0) { stopPlay(); choose(0); return; }
+      choose(i, false);
+      panel.querySelector(`[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+    }, Math.max(120, Math.min(500, 8000 / groups.length)));
+    choose(i, false);
+    render();
+  }
+  function stopPlay() {
+    clearInterval(playing);
+    playing = 0;
+    render();
+  }
+
   async function open() {
     panel.hidden = false;
     $('btnHistory').classList.add('on');
@@ -151,6 +172,7 @@ export function initHistory(B, d) {
   }
 
   function close() {
+    if (playing) { clearInterval(playing); playing = 0; }
     panel.hidden = true;
     bar.hidden = true;
     $('btnHistory').classList.remove('on');

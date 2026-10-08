@@ -21,7 +21,7 @@ test('история: просмотр прошлого, откат и отка�
   // Аня открывает историю и смотрит момент до удаления
   await a.click('#btnHistory');
   const evs = a.locator('.ev');
-  await expect(evs.first()).toContainText('Удаление, элементов: 2');
+  await expect(evs.first()).toContainText('Снято с доски: 2');
   await expect(evs.first()).toContainText('Миша');
   await evs.nth(1).click();
   await expect(a.locator('#pastBar')).toBeVisible();

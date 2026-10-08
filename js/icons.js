@@ -13,6 +13,8 @@ const P = {
   front: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   bigger: '<path d="M4 18L9 6l5 12M5.8 14h6.4M17 9v6M14 12h6"/>',
   smaller: '<path d="M4 18L9 6l5 12M5.8 14h6.4M14 12h6"/>',
+  play: '<path d="M7 5l12 7-12 7z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
 };
 
 export function icon(name, small = false) {

@@ -18,6 +18,11 @@ export function connectLive(B, h) {
     .on('broadcast', { event: 'c' }, ({ payload }) => h.onCursor(payload))
     .on('broadcast', { event: 'd' }, ({ payload }) => h.onDrag(payload.items))
     .on('broadcast', { event: 'h' }, ({ payload }) => h.onHold(payload))
+    .on('broadcast', { event: 'v' }, ({ payload }) => h.onViewport(payload))
+    .on('broadcast', { event: 's' }, ({ payload }) => h.onSummon(payload))
+    .on('broadcast', { event: 'ask' }, () => sendViewport())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds', filter }, (p) => p.new?.board_id && h.onRound(p.new))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'votes', filter }, (p) => p.new?.id && h.onVote(p.new))
     .on('presence', { event: 'sync' }, () => {
       const state = ch.presenceState();
       h.onPresence(Object.values(state).map((list) => list[list.length - 1]));
@@ -62,6 +67,11 @@ export function connectLive(B, h) {
 
   const send = (event, payload) => joined && ch.send({ type: 'broadcast', event, payload });
 
+  // Моя камера: для тех, кто смотрит моими глазами
+  let view = null;
+  const sendViewport = () => view && send('v', { u: uid, ...view });
+  const viewport = throttle(() => sendViewport(), 120);
+
   addEventListener('online', () => h.onStatus(joined));
   addEventListener('offline', () => h.onStatus(false));
 
@@ -74,5 +84,11 @@ export function connectLive(B, h) {
       sendHold();
     },
     retrack: track,
+    viewport(x, y, s) {
+      view = { x: Math.round(x), y: Math.round(y), s: Math.round(s * 1000) / 1000 };
+      viewport();
+    },
+    askViewport: () => send('ask', {}),
+    summon: (x, y, s) => send('s', { u: uid, x: Math.round(x), y: Math.round(y), s }),
   };
 }

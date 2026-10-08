@@ -54,7 +54,7 @@ test('двое правят текст одной заметки и не зат�
   const tb = b.locator('.el.note textarea');
   await expect(ta).toBeVisible();
   await expect(tb).toBeVisible();
-  await expect(notes(a).first().locator('.tag')).toHaveText('Миша правит');
+  await expect(notes(a).first().locator('.tag')).toHaveText('Миша пишет');
 
   // Аня пишет в начало, Миша в конец, одновременно
   await ta.press('Control+Home');

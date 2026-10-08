@@ -40,17 +40,17 @@ function boardUrl(id, secret) {
 function showGate(html) {
   document.getElementById('app').hidden = true;
   gate.hidden = false;
-  gate.innerHTML = `<div class="card">${html}</div>`;
+  gate.innerHTML = `<div class="card"><span class="tape"></span>${html}</div>`;
   return gate.firstElementChild;
 }
 
-const HEAD = '<h1><span class="logo"><i></i></span>Доска</h1>';
+const HEAD = '<h1>Доска</h1>';
 
 // Стартовый экран: создать доску
 function landing() {
   const recent = store.get('boards', []);
   const root = showGate(`${HEAD}
-    <p class="lead">Общая доска заметок по ссылке. Правьте вместе, ничего не теряется.</p>
+    <p class="lead">Пробковая доска по ссылке. Прикалывайте заметки вместе, ничего не потеряется.</p>
     <form id="f">
       <label for="name">Ваше имя</label>
       <input id="name" class="field" maxlength="40" autocomplete="nickname" required>
