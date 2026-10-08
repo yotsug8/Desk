@@ -46,7 +46,7 @@ export function initHistory(B, d) {
     const t = (s?.data?.text || '').replace(/\s+/g, ' ').trim();
     return t ? `«${t.length > 28 ? t.slice(0, 28) + '...' : t}»` : '';
   };
-  const kind = (s) => ({ text: 'надпись', link: 'нитка', draw: 'рисунок', list: 'список', image: 'фото' }[s?.type] || 'заметка');
+  const kind = (s) => ({ text: 'надпись', link: 'связь', draw: 'рисунок', list: 'список', image: 'фото' }[s?.type] || 'заметка');
 
   function describe(g) {
     const r = g.row;
@@ -57,7 +57,7 @@ export function initHistory(B, d) {
       case 'join': return 'Вход на доску';
       case 'rename': return `Новое название «${esc(a?.title)}»`;
       case 'rollback': return n > 1 ? `Откат доски, изменений: ${n}` : 'Откат доски';
-      case 'create': return a?.type === 'link' ? 'Натянута нитка' : a?.type === 'draw' ? 'Рисунок мелком' : `Добавлено: ${kind(a)} ${esc(snip(a))}`;
+      case 'create': return a?.type === 'link' ? 'Связь между элементами' : a?.type === 'draw' ? 'Рисунок' : `Добавлено: ${kind(a)} ${esc(snip(a))}`;
       case 'delete': return n > 1 ? `Снято с доски: ${n}` : `Снято: ${esc(snip(b) || kind(b))}`;
       case 'restore': return `Возврат ${esc(snip(a) || kind(a))}`;
       case 'update': {

@@ -20,9 +20,7 @@ export function connectLive(B, h) {
     .on('broadcast', { event: 'h' }, ({ payload }) => h.onHold(payload))
     .on('broadcast', { event: 'v' }, ({ payload }) => h.onViewport(payload))
     .on('broadcast', { event: 's' }, ({ payload }) => h.onSummon(payload))
-    .on('broadcast', { event: 'prank' }, ({ payload }) => h.onPrank(payload))
     .on('broadcast', { event: 'ask' }, () => sendViewport())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds', filter }, (p) => p.new?.board_id && h.onRound(p.new))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'votes', filter }, (p) => p.new?.id && h.onVote(p.new))
     .on('presence', { event: 'sync' }, () => {
       const state = ch.presenceState();
@@ -91,6 +89,5 @@ export function connectLive(B, h) {
     },
     askViewport: () => send('ask', {}),
     summon: (x, y, s) => send('s', { u: uid, x: Math.round(x), y: Math.round(y), s }),
-    prank: () => send('prank', { u: uid, ms: 60000 }),
   };
 }

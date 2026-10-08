@@ -37,41 +37,35 @@ test('нитка между заметками видна второму уча�
   expect(res).toEqual(['bad_link', 'bad_link']);
 });
 
-test('голосование: у каждого три кнопки, итоги видят все', async ({ browser }) => {
+test('голос: один на человека, ставится и снимается, виден всем', async ({ browser }) => {
   const a = await (await browser.newContext()).newPage();
   const b = await (await browser.newContext()).newPage();
   const url = await createBoard(a, 'Аня');
   await joinBoard(b, url, 'Миша');
-  await addNote(a, 350, 300, 'Палатка');
-  await addNote(a, 750, 300, 'Шатёр');
+  await addNote(a, 400, 300, 'Палатка');
+  await expect(notes(b)).toHaveCount(1);
 
-  await a.mouse.click(1000, 650, { button: 'right' });
-  await a.click('#radial [data-act=voting]');
-  await a.click('[data-m="1"]');
-  await expect(b.locator('#voteBar')).toContainText('Голосование');
+  // Аня голосует из меню элемента
+  await notes(a).first().click({ button: 'right' });
+  await a.click('#ctx [data-act=vote]');
+  await expect(notes(b).first().locator('.votes b')).toHaveText('1');
 
-  // Аня втыкает три кнопки, четвёртая не проходит
-  for (let i = 0; i < 3; i++) await notes(a).nth(0).click();
-  await expect(notes(a).nth(0).locator('.votes b')).toHaveText('3');
-  await notes(a).nth(1).click();
-  await expect(a.locator('.toast').last()).toContainText('закончились');
-  await expect(notes(b).nth(0).locator('.votes b')).toHaveText('3');
+  // Миша голосует нажатием на счётчик
+  await notes(b).first().locator('.votes').click();
+  await expect(notes(a).first().locator('.votes b')).toHaveText('2');
 
-  // и в обход интерфейса тоже
-  const err = await a.evaluate(async () => {
+  // повторное нажатие снимает голос
+  await notes(b).first().locator('.votes').click();
+  await expect(notes(a).first().locator('.votes b')).toHaveText('1');
+
+  // в обход интерфейса больше одного голоса не набрать: функция только переключает
+  const n = await a.evaluate(async () => {
     const id = [...window.__desk.els.values()].find((r) => r.type === 'note').id;
-    return (await window.__deskApi.sb.rpc('vote', { p_element: id, p_delta: 1 })).error?.message;
+    const sb = window.__deskApi.sb;
+    await sb.rpc('vote_toggle', { p_element: id });
+    return (await sb.rpc('vote_toggle', { p_element: id })).data;
   });
-  expect(err).toBe('no_votes_left');
-
-  // Миша голосует за вторую
-  await b.click('#voteBar [data-v=tool]');
-  await notes(b).nth(1).click();
-  await expect(notes(a).nth(1).locator('.votes b')).toHaveText('1');
-
-  // Аня заканчивает: остаются итоги
-  await a.click('#voteBar [data-v=stop]');
-  await expect(b.locator('#voteBar')).toContainText('Итоги');
+  expect(n).toBe(1);
 });
 
 test('«Сюда!» переносит камеру второго участника', async ({ browser }) => {
@@ -80,19 +74,19 @@ test('«Сюда!» переносит камеру второго участн�
   const url = await createBoard(a, 'Аня');
   await joinBoard(b, url, 'Миша');
 
-  // Аня уезжает далеко и зовёт
+  // Аня уезжает далеко и зовёт через меню доски
   for (let i = 0; i < 4; i++) await a.mouse.wheel(0, 600);
-  await a.mouse.click(640, 400, { button: 'right' });
-  await a.click('#radial [data-act=summon]');
+  await a.click('#btnMenu');
+  await a.click('#menu [data-m=summon]');
   const target = await a.evaluate(() => ({ x: window.__desk.cam.x, y: window.__desk.cam.y }));
   await expect.poll(() => b.evaluate(() => Math.round(window.__desk.cam.y))).toBe(Math.round(target.y));
   await expect(b.locator('.toast').last()).toContainText('Аня зовёт');
 });
 
-test('круговое меню создаёт заметку', async ({ page }) => {
+test('контекстное меню создаёт заметку', async ({ page }) => {
   await createBoard(page);
   await page.mouse.click(600, 400, { button: 'right' });
-  await page.locator('#radial [data-act=note]').click();
+  await page.locator('#ctx [data-act=note]').click();
   await page.keyboard.type('Из меню');
   await page.mouse.click(1100, 650);
   await waitSaved(page);
@@ -124,24 +118,6 @@ test('снятую заметку можно сразу вернуть', async (
   await expect(notes(page).first()).toContainText('Не теряйся');
 });
 
-test('«Лобач!» на минуту меняет все надписи у всех, данные не трогает', async ({ browser }) => {
-  const a = await (await browser.newContext()).newPage();
-  const b = await (await browser.newContext()).newPage();
-  const url = await createBoard(a, 'Аня');
-  await joinBoard(b, url, 'Миша');
-  await addNote(a, 400, 300, 'Купить хлеб');
-  await expect(notes(b)).toHaveCount(1);
-
-  await a.mouse.click(900, 500, { button: 'right' });
-  await a.click('#radial [data-act=prank]');
-  await expect(notes(b).first().locator('.body')).toHaveText('Лобач');
-  await expect(b.locator('#boardTitle')).toHaveText('Лобач');
-  await expect(notes(a).first().locator('.body')).toHaveText('Лобач');
-  // в данных текст прежний
-  const text = await b.evaluate(() => [...window.__desk.els.values()][0].data.text);
-  expect(text).toBe('Купить хлеб');
-});
-
 test('ярлычок «вернуть» не ложится на полоску мелков', async ({ page }) => {
   await createBoard(page);
   await page.keyboard.press('d');
@@ -168,7 +144,7 @@ test('уведомление и ярлычок «вернуть» не пере�
   await page.keyboard.press('Delete');
   await expect(page.locator('#undo')).toBeVisible();
   await page.mouse.click(900, 400, { button: 'right' });
-  await page.click('#radial [data-act=prank]');
+  await page.click('#ctx [data-act=summon]');
   const t = await page.locator('.toast').last().boundingBox();
   const u = await page.locator('#undo').boundingBox();
   const overlap = !(t.y >= u.y + u.height || u.y >= t.y + t.height);
