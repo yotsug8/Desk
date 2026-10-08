@@ -28,9 +28,17 @@ if (!project) {
   // у нового аккаунта организации нет: создаём на бесплатном тарифе
   let [org] = await api('GET', '/organizations');
   if (!org) {
-    org = await api('POST', '/organizations', { name: 'Desk' });
-    console.log('создана организация', org.id);
+    try {
+      org = await api('POST', '/organizations', { name: 'Desk' });
+      console.log('создана организация', org.id);
+    } catch (err) {
+      // организация могла появиться только что: ищем ещё раз
+      await sleep(5000);
+      [org] = await api('GET', '/organizations');
+      if (!org) throw err;
+    }
   }
+  console.log('организация', org.id);
   project = await api('POST', '/projects', {
     name: NAME,
     organization_id: org.id,
