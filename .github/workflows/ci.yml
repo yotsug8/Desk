@@ -67,3 +67,30 @@ jobs:
             git commit -m "Адрес боевой базы в config.js" js/config.js
             git push origin HEAD:${{ github.ref_name }}
           fi
+
+  # Сайт на Vercel: выкладывается после зелёных тестов, если задан секрет VERCEL_TOKEN
+  deploy-vercel:
+    needs: [test, prod-db]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_ifs6vgLtjxPHKKRFo5PjuKY2
+      VERCEL_PROJECT_ID: prj_p7pp5Bd9mSRPgZYgoM8i3NMCYuPH
+    steps:
+      - uses: actions/checkout@v4
+        if: env.VERCEL_TOKEN != ''
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-node@v4
+        if: env.VERCEL_TOKEN != ''
+        with:
+          node-version: 22
+      - name: Выкладка
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          mkdir _site
+          cp -r index.html css js _site/
+          cd _site
+          url=$(npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN")
+          echo "Сайт: $url" | tee -a "$GITHUB_STEP_SUMMARY"
