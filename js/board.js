@@ -73,9 +73,10 @@ export async function startBoard(opts) {
   $('app').hidden = false;
   buildChrome();
 
-  const [els, members, votes] = await Promise.all([
-    select('elements', B.id), select('members', B.id), select('votes', B.id),
+  const [els, members, votes, requests] = await Promise.all([
+    select('elements', B.id), select('members', B.id), select('votes', B.id), select('requests', B.id),
   ]);
+  B.requests = new Map(requests.filter((r) => r.status === 'pending').map((r) => [r.id, r]));
   for (const m of members) B.members.set(m.user_id, m);
   for (const e of els) B.els.set(e.id, e);
   for (const v of votes) B.votes.set(v.id, v);
@@ -94,13 +95,24 @@ export async function startBoard(opts) {
     onCursor: drawCursor,
     onViewport,
     onSummon,
+    onKick: () => location.reload(),
     onVote: (v) => { B.votes.set(v.id, v); renderVotes(v.element_id); },
+    onRequest: (r) => {
+      if (r.status === 'pending') B.requests.set(r.id, r);
+      else {
+        if (B.requests.has(r.id) && r.user_id === B.me.user_id) toast(r.status === 'approved' ? 'Ваш запрос одобрен' : 'Ваш запрос отклонён');
+        B.requests.delete(r.id);
+      }
+      renderRequests();
+    },
     onStatus: (ok) => { B.online = ok; updateStatus(); },
     onResync: resync,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
 
   B.loaded = true;
+  renderRequests();
+  setInterval(updateStatus, 30000);
   if (opts.fresh && opts.starter && canEdit()) seedBoard();
   else if (opts.fresh) inviteDialog();
 }
@@ -159,6 +171,8 @@ function toggleMenu(force) {
     ['history', 'clock', 'История и откат'],
     ['summon', 'bell', 'Позвать всех сюда'],
     ['fit', 'fit', 'Показать всю доску'],
+    ['trash', 'trash', 'Корзина'],
+    ['people', 'users', 'Участники'],
     isOwner() ? ['rename', 'pencil', 'Переименовать доску'] : null,
     ['keys', 'keyboard', 'Горячие клавиши'],
     '-',
@@ -177,7 +191,94 @@ function toggleMenu(force) {
     if (m === 'fit') fitCamera(true);
     if (m === 'rename') renameDialog();
     if (m === 'keys') keysDialog();
+    if (m === 'trash') trashDialog();
+    if (m === 'people') peopleDialog();
     if (m === 'new' || m === 'boards') location.href = './';
+  };
+}
+
+// Корзина: снятое за 30 дней, вернуть одним нажатием
+async function trashDialog() {
+  let list = [];
+  try { list = await call('trash_list', { p_board: B.id }); } catch (err) { return toast(err.message, true); }
+  const kinds = { note: 'Заметка', text: 'Текст', list: 'Список', draw: 'Рисунок', image: 'Фото' };
+  const when = (iso) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const { root, close } = openModal(`
+    <h3>Корзина</h3>
+    <p>Снятое лежит здесь 30 дней, его можно вернуть на доску.</p>
+    <div class="trash">${list.length ? list.map((r) => `
+      <div class="tr" data-id="${r.id}">
+        <span class="k">${kinds[r.type] || 'Элемент'}</span>
+        <span class="tx">${esc((r.data.text || '').replace(/\[( |x)\] ?/g, '').slice(0, 60)) || '<i>без текста</i>'}</span>
+        <span class="muted">${esc(memberName(r.updated_by))}, ${when(r.deleted_at)}</span>
+        ${canEdit() ? '<button class="minibtn" data-back>Вернуть</button>' : ''}
+      </div>`).join('') : '<div class="muted">Корзина пуста</div>'}</div>
+    <div class="row"><button class="minibtn go" data-close>Закрыть</button></div>`);
+  root.querySelector('[data-close]').onclick = close;
+  root.onclick = async (e) => {
+    const b = e.target.closest('[data-back]');
+    if (!b) return;
+    const row = b.closest('[data-id]');
+    try {
+      await call('el_restore', { p_ids: [row.dataset.id] });
+      row.remove();
+      toast('Возвращено на доску');
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+// Участники: владелец меняет права, выгоняет и откатывает действия человека
+async function peopleDialog() {
+  let members = [], board = null;
+  try {
+    members = await select('members', B.id);
+    const { data } = await sb.from('boards').select('readonly_for_new').eq('id', B.id).single();
+    board = data;
+  } catch (err) { return toast(err.message, true); }
+  const own = isOwner();
+  const online = new Set(B.people.map((p) => p.u));
+  const draw = () => `
+    <h3>Участники</h3>
+    ${own ? `<label class="switch"><input type="checkbox" data-ro ${board?.readonly_for_new ? 'checked' : ''}> Новые гости только смотрят</label>` : ''}
+    <div class="members">${members.sort((a, b) => (a.role === 'owner' ? -1 : b.role === 'owner' ? 1 : a.joined_at.localeCompare(b.joined_at))).map((m) => `
+      <div class="mr${m.banned ? ' banned' : ''}" data-u="${m.user_id}">
+        <span class="av" style="--c:${esc(m.color)}">${esc((m.name || '?')[0].toUpperCase())}</span>
+        <span class="nm">${esc(m.name)}${m.user_id === B.me.user_id ? ' (вы)' : ''}<small>${m.role === 'owner' ? 'владелец' : m.banned ? 'выгнан' : m.role === 'viewer' ? 'только смотрит' : 'может править'}${online.has(m.user_id) ? ', в сети' : ''}</small></span>
+        ${own && m.role !== 'owner' ? `
+          <button class="minibtn" data-a="role">${m.role === 'viewer' ? 'Разрешить править' : 'Только смотреть'}</button>
+          <button class="minibtn" data-a="undo" title="Откатить всё, что человек сделал за сутки">Откатить</button>
+          <button class="minibtn${m.banned ? '' : ' danger'}" data-a="ban">${m.banned ? 'Вернуть' : 'Выгнать'}</button>` : ''}
+      </div>`).join('')}</div>
+    <div class="row"><button class="minibtn go" data-close>Закрыть</button></div>`;
+  const { root, close } = openModal(draw());
+  root.onclick = async (e) => {
+    if (e.target.closest('[data-close]')) return close();
+    const ro = e.target.closest('[data-ro]');
+    if (ro) {
+      try { await call('set_readonly_new', { p_board: B.id, p_on: ro.checked }); board.readonly_for_new = ro.checked; } catch (err) { toast(err.message, true); ro.checked = !ro.checked; }
+      return;
+    }
+    const b = e.target.closest('[data-a]');
+    if (!b) return;
+    const m = members.find((x) => x.user_id === b.closest('[data-u]').dataset.u);
+    try {
+      if (b.dataset.a === 'role') {
+        m.role = m.role === 'viewer' ? 'editor' : 'viewer';
+        await call('set_member', { p_board: B.id, p_user: m.user_id, p_role: m.role, p_banned: m.banned });
+      }
+      if (b.dataset.a === 'ban') {
+        m.banned = !m.banned;
+        await call('set_member', { p_board: B.id, p_user: m.user_id, p_role: m.role, p_banned: m.banned });
+        if (m.banned) B.live.kick(m.user_id);
+        toast(m.banned ? `${m.name} больше не может зайти на доску` : `${m.name} снова может зайти`);
+      }
+      if (b.dataset.a === 'undo') {
+        if (!confirm(`Откатить все действия участника «${m.name}» за сутки? Правки других людей поверх них останутся.`)) return;
+        const n = await call('undo_user', { p_board: B.id, p_user: m.user_id, p_hours: 24 });
+        toast(n ? `Откатено изменений: ${n}` : 'Откатывать нечего');
+      }
+      root.innerHTML = draw();
+    } catch (err) { toast(err.message, true); }
   };
 }
 
@@ -185,7 +286,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -376,6 +477,15 @@ async function toggleItem(id, idx) {
 }
 
 const isOwner = () => B.me.role === 'owner';
+// Новичок: первые 5 минут на доске можно только добавлять своё
+const newbieLeft = () => (isOwner() ? 0 : Math.max(0, Math.ceil((new Date(B.me.joined_at).getTime() + 5 * 60e3 - Date.now()) / 60e3)));
+// Можно ли трогать элемент: свой, или владелец, или не закреплён и не новичок
+function mayTouch(r) {
+  if (!r || isOwner() || r.created_by === B.me.user_id) return true;
+  if (r.locked) { toast('Элемент закреплён: менять его могут автор и владелец'); return false; }
+  if (newbieLeft()) { toast(`Новичкам первые 5 минут можно только добавлять своё, осталось ${newbieLeft()} мин`); return false; }
+  return true;
+}
 const canEdit = () => ['owner', 'editor'].includes(B.me.role) && !B.past;
 
 function updateStatus() {
@@ -384,6 +494,7 @@ function updateStatus() {
   if (B.online === null) el.textContent = 'подключаюсь';
   else if (!B.online) el.textContent = 'нет связи';
   else if (B.me.role === 'viewer') el.textContent = 'только просмотр';
+  else if (newbieLeft() && !B.pending) el.textContent = `новичок, ещё ${newbieLeft()} мин`;
   else el.textContent = B.pending ? 'сохраняю' : 'сохранено';
 }
 
@@ -710,7 +821,12 @@ function renderEl(id) {
     if (!pin) { pin = document.createElement('i'); pin.className = 'pin'; node.append(pin); }
     pin.style.setProperty('--p', v.created_by ? memberColor(v.created_by) : '#b3261e');
   } else pin?.remove();
-  node.title = v.created_by ? memberName(v.created_by) : '';
+  node.title = v.created_by ? memberName(v.created_by) + (v.locked ? ', закреплено' : '') : '';
+  node.classList.toggle('locked', !!v.locked);
+  let lockMark = node.querySelector('.lockmark');
+  if (v.locked && t !== 'draw') {
+    if (!lockMark) { lockMark = document.createElement('i'); lockMark.className = 'lockmark'; lockMark.innerHTML = icon('lock', true); node.append(lockMark); }
+  } else lockMark?.remove();
 
   let grip = node.querySelector('.grip');
   if (!grip && canEdit() && (t === 'note' || t === 'list' || t === 'image')) {
@@ -950,6 +1066,15 @@ function renderVotesAll() {
   for (const id of B.nodes.keys()) renderVotes(id);
 }
 
+async function lockEl(id) {
+  const r = B.els.get(id);
+  if (!r) return;
+  try {
+    applyRemote(await call('el_lock', { p_id: id, p_locked: !r.locked }));
+    toast(r.locked ? 'Откреплено' : 'Закреплено: менять могут только автор и владелец');
+  } catch (err) { toast(err.message, true); }
+}
+
 async function voteToggle(id) {
   try {
     await call('vote_toggle', { p_element: id });
@@ -1037,6 +1162,7 @@ async function createEl(type, wx, wy) {
 async function deleteSel(quiet) {
   const ids = [...B.sel];
   if (!ids.length || !canEdit()) return;
+  if (!ids.every((id) => mayTouch(B.els.get(id)))) return;
   finishEdit();
   for (const id of ids) {
     const r = B.els.get(id);
@@ -1049,9 +1175,64 @@ async function deleteSel(quiet) {
     await call('el_delete', { p_ids: ids });
     if (!quiet) undoChip(ids);
   } catch (err) {
-    toast(err.message, true);
     resync();
+    if (err.code === 'mass_limit') askApproval('delete', ids, ids.length);
+    else toast(err.message, true);
   }
+}
+
+// Крупное действие с чужими элементами: предлагаем отправить на одобрение
+function askApproval(kind, payload, n) {
+  const { root, close } = openModal(`
+    <h3>Нужно одобрение</h3>
+    <p>За минуту можно ${kind === 'delete' ? 'удалить' : 'сдвинуть'} не больше 10 чужих элементов. Это защита от порчи доски.
+      Можно отправить действие на одобрение: его увидят все участники, и владелец или другой участник разрешит.</p>
+    <div class="row"><button class="minibtn" data-close>Отмена</button><button class="minibtn go" data-send>Отправить на одобрение</button></div>`);
+  root.querySelector('[data-close]').onclick = close;
+  root.querySelector('[data-send]').onclick = async () => {
+    close();
+    try {
+      await call('request_mass', { p_board: B.id, p_kind: kind, p_payload: payload });
+      toast(`Запрос отправлен: ${n} элементов ждут одобрения`);
+    } catch (err) { toast(err.message, true); }
+  };
+}
+
+// Запросы на одобрение видны всем; решать может владелец или другой участник, не новичок
+function renderRequests() {
+  const box = $('requests');
+  const list = [...B.requests.values()].sort((a, b) => a.id - b.id);
+  box.hidden = !list.length || !!B.past;
+  if (box.hidden) { box.innerHTML = ''; return; }
+  box.innerHTML = list.slice(0, 3).map((r) => {
+    const mine = r.user_id === B.me.user_id;
+    const canDecide = canEdit() && (isOwner() || (!mine && !newbieLeft()));
+    return `<div class="req" data-r="${r.id}">
+      ${icon('alert', true)}<span><b>${esc(memberName(r.user_id))}</b> хочет ${r.kind === 'delete' ? 'удалить' : 'сдвинуть'} ${r.n} эл.</span>
+      <button class="minibtn" data-ra="show">Показать</button>
+      ${canDecide ? '<button class="minibtn go" data-ra="yes">Разрешить</button><button class="minibtn" data-ra="no">Отклонить</button>' : `<span class="muted">${mine ? 'ждёт одобрения' : ''}</span>`}
+    </div>`;
+  }).join('');
+  box.onclick = async (e) => {
+    const b = e.target.closest('[data-ra]');
+    if (!b) return;
+    const r = B.requests.get(Number(b.closest('[data-r]').dataset.r));
+    if (!r) return;
+    if (b.dataset.ra === 'show') {
+      const ids = r.kind === 'delete' ? r.payload : r.payload.map((m) => m.id);
+      setSelection(ids.filter((id) => B.els.get(id) && !B.els.get(id).deleted_at));
+      const rows = ids.map((id) => B.els.get(id)).filter(Boolean);
+      if (rows.length) {
+        const x = rows.reduce((a, q) => a + q.x + q.w / 2, 0) / rows.length, y = rows.reduce((a, q) => a + q.y + q.h / 2, 0) / rows.length;
+        flyTo(x, y, Math.min(1, B.cam.s), 500);
+      }
+      return;
+    }
+    try {
+      await call('decide_request', { p_id: r.id, p_approve: b.dataset.ra === 'yes' });
+      toast(b.dataset.ra === 'yes' ? 'Разрешено' : 'Отклонено');
+    } catch (err) { toast(err.message, true); }
+  };
 }
 
 // Маленький ярлычок у полочки: снятое можно сразу вернуть
@@ -1128,6 +1309,7 @@ function bringFront() {
 function startEdit(id) {
   if (!canEdit()) return;
   if (B.editing?.id === id) return;
+  if (!mayTouch(B.els.get(id))) return;
   finishEdit();
   const row = B.els.get(id);
   const node = B.nodes.get(id);
@@ -1401,7 +1583,11 @@ function openCtx(sx, sy, target) {
     items = [[ 'vote', 'thumb', voted ? 'Убрать голос' : 'Голосовать', '' ]];
     if (canEdit()) {
       items.unshift(['edit', 'pencil', 'Править', 'Enter']);
-      items.push(['link', 'connect', 'Связать с...', 'L'], ['front', 'front', 'На передний план', ''], '-', ['del', 'trash', 'Удалить', 'Del']);
+      const r = B.els.get(id);
+      const mayLock = r && (isOwner() || r.created_by === B.me.user_id);
+      items.push(['link', 'connect', 'Связать с...', 'L'], ['front', 'front', 'На передний план', '']);
+      if (mayLock) items.push(['lock', 'lock', r.locked ? 'Открепить' : 'Закрепить', '']);
+      items.push('-', ['del', 'trash', 'Удалить', 'Del']);
     }
   } else {
     items = canEdit()
@@ -1430,6 +1616,7 @@ function openCtx(sx, sy, target) {
     if (act === 'front') { setSelection([id]); bringFront(); }
     if (act === 'del') { setSelection([id]); deleteSel(); }
     if (act === 'vote') voteToggle(id);
+    if (act === 'lock') lockEl(id);
   };
 }
 
@@ -1558,6 +1745,7 @@ function bindInput() {
         g = { mode: 'resize', id, sx: e.clientX, sy: e.clientY, w0: r.w, h0: r.h, moved: false };
         return;
       }
+      if (!mayTouch(B.els.get(id))) { setSelection([id]); g = null; return; }
       const wasSel = B.sel.has(id);
       if (e.shiftKey) {
         const s = new Set(B.sel);
@@ -1711,7 +1899,11 @@ function bindInput() {
       if (!cancel) {
         Promise.all(ids.map((id) => B.els.get(id)?._creating))
           .then(() => call('el_move', { p_moves: moves }))
-          .catch((err) => { toast(err.message, true); resync(); })
+          .catch((err) => {
+            resync();
+            if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
+            else toast(err.message, true);
+          })
           .finally(() => ids.forEach((id) => B.myDrag.delete(id)));
       } else ids.forEach((id) => B.myDrag.delete(id));
       ids.forEach((id) => B.nodes.get(id)?.classList.remove('lift'));
@@ -1760,7 +1952,10 @@ function bindInput() {
 
   addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || !$('modal').hidden) return;
-    if ((e.key === 'Delete' || e.key === 'Backspace') && B.sel.size) { e.preventDefault(); deleteSel(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault();
+      setSelection([...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link').map((r) => r.id));
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && B.sel.size) { e.preventDefault(); deleteSel(); }
     else if (e.key === 'Escape') {
       closeCtx();
       $('menu').hidden = true;

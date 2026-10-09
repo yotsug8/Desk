@@ -274,3 +274,33 @@ body.pens-open .toasts { bottom: 138px; }
   body.pens-open .toasts { bottom: 132px; }
 }
 @media (min-width: 641px) { .lbl-short { display: none; } }
+
+/* ---------- Защита ---------- */
+.requests { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 23; display: flex; flex-direction: column; gap: 6px; max-width: calc(100vw - 24px); }
+.req { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 12px; background: var(--panel); color: var(--panel-text); box-shadow: var(--shadow); font-size: 13px; white-space: nowrap; }
+.req svg { color: #f0b36b; }
+.req span { overflow: hidden; text-overflow: ellipsis; }
+.muted { color: var(--mute); font-size: 12px; }
+.req .muted { color: var(--panel-mute); }
+.minibtn.danger { color: var(--red); }
+.el.locked .pin { background: radial-gradient(circle at 35% 30%, #ffffffb0 0 1.5px, #6f6a64 2.5px); }
+.el .lockmark { position: absolute; left: -8px; top: -8px; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: var(--panel); color: #fff; box-shadow: 0 1px 3px #0004; pointer-events: none; }
+.el .lockmark svg { width: 12px; height: 12px; }
+.el.locked .grip { display: none !important; }
+.trash, .members { display: flex; flex-direction: column; max-height: 52vh; overflow-y: auto; margin: 4px -6px 0; }
+.tr, .mr { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.tr .k { flex: none; width: 64px; color: var(--mute); font-size: 12px; }
+.tr .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr .muted { flex: none; }
+.mr .av { margin: 0; border-color: var(--paper); flex: none; }
+.mr .nm { flex: 1; min-width: 0; }
+.mr .nm small { display: block; color: var(--mute); font-size: 11px; }
+.mr.banned { opacity: .55; }
+.mr .minibtn { height: 26px; padding: 0 8px; font-size: 12px; }
+.switch { display: flex; align-items: center; gap: 8px; margin: 6px 0 10px; font-size: 13px; cursor: pointer; }
+.switch input { width: 16px; height: 16px; accent-color: var(--acc); }
+@media (max-width: 640px) {
+  .req { flex-wrap: wrap; white-space: normal; }
+  .mr { flex-wrap: wrap; }
+  .tr .muted { display: none; }
+}

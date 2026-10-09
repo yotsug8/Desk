@@ -59,6 +59,7 @@ export function initHistory(B, d) {
       case 'rollback': return n > 1 ? `Откат доски, изменений: ${n}` : 'Откат доски';
       case 'create': return a?.type === 'link' ? 'Связь между элементами' : a?.type === 'draw' ? 'Рисунок' : `Добавлено: ${kind(a)} ${esc(snip(a))}`;
       case 'delete': return n > 1 ? `Снято с доски: ${n}` : `Снято: ${esc(snip(b) || kind(b))}`;
+      case 'lock': return `${a?.locked ? 'Закреплено' : 'Откреплено'}: ${esc(snip(a) || kind(a))}`;
       case 'restore': return `Возврат ${esc(snip(a) || kind(a))}`;
       case 'update': {
         const what = esc(snip(a) || kind(a));
