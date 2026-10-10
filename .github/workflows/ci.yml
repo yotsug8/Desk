@@ -94,5 +94,7 @@ jobs:
           cd _site
           url=$(npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN")
           # короткий адрес сайта всегда смотрит на свежую выкладку
-          npx --yes vercel@latest alias set "$url" doskaru.vercel.app --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          curl -sf -X POST "https://api.vercel.com/v2/deployments/${url#https://}/aliases?teamId=$VERCEL_ORG_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+            -d '{"alias":"doskaru.vercel.app"}' > /dev/null
           echo "Сайт: https://doskaru.vercel.app ($url)" | tee -a "$GITHUB_STEP_SUMMARY"
