@@ -192,6 +192,7 @@ function colorOf(r) {
   if (r.type === 'list') return c === 'yellow' ? '#f6edc6' : c === 'blue' ? '#e2ecf4' : '#fbf9f4';
   if (r.type === 'draw') return A.DRAW[c] || A.DRAW.white;
   if (r.type === 'image') return '#e9e4da';
+  if (r.type === 'frame') return '#ffffff33';
   return c === 'white' ? '#fbf7ee' : c === 'red' ? '#b8412e' : '#26221f';
 }
 
@@ -240,12 +241,12 @@ function save(blob, ext) {
 
 // Markdown: сверху вниз, слева направо
 export function toMarkdown() {
-  const list = rows().filter((r) => ['note', 'text', 'list', 'image'].includes(r.type) && (r.data?.text || '').trim())
+  const list = rows().filter((r) => ['note', 'text', 'list', 'image', 'frame'].includes(r.type) && (r.data?.text || '').trim())
     .sort((a, b) => a.y - b.y || a.x - b.x);
   const out = [`# ${B.title || 'Доска'}`, ''];
   for (const r of list) {
     const t = r.data.text.trim();
-    if (r.type === 'text') out.push(`## ${t.replace(/\n+/g, ' ')}`);
+    if (r.type === 'text' || r.type === 'frame') out.push(`## ${t.replace(/\n+/g, ' ')}`);
     else if (r.type === 'list') out.push(t.split('\n').map((l) => (/^\[( |x)\]/.test(l) ? `- ${l}` : `**${l.trim()}**`)).join('\n'));
     else if (r.type === 'image') out.push(`*Фото: ${t}*`);
     else out.push(t.split('\n').map((l) => `> ${l}`).join('\n'));
@@ -257,7 +258,7 @@ export function toMarkdown() {
 // Размер как на экране: у списков, текста и фото он зависит от содержимого
 function sized(r) {
   const n = B.nodes.get(r.id);
-  return r.type === 'note' || r.type === 'draw' || !n ? r : { ...r, w: n.offsetWidth || r.w, h: n.offsetHeight || r.h };
+  return r.type === 'note' || r.type === 'draw' || r.type === 'frame' || !n ? r : { ...r, w: n.offsetWidth || r.w, h: n.offsetHeight || r.h };
 }
 
 // PNG: всё рисуем заново на холсте, без снимков экрана
@@ -291,7 +292,7 @@ async function toPNG() {
     try { await im.decode(); return [r.id, im]; } catch { return [r.id, null]; }
   })));
 
-  const byZ = [...solid].sort((a, b) => (a.z || 0) - (b.z || 0));
+  const byZ = [...solid].sort((a, b) => (a.type === 'frame' ? 0 : 1) - (b.type === 'frame' ? 0 : 1) || (a.z || 0) - (b.z || 0));
   for (const r of byZ) paintEl(g, r, imgs.get(r.id));
   for (const r of list.filter((q) => q.type === 'link')) paintLink(g, r);
 
@@ -311,7 +312,27 @@ function shadowed(g, fn) {
 
 function paintEl(g, r, img) {
   const text = r.data?.text || '';
-  if (r.type === 'note' || r.type === 'list') {
+  if (r.type === 'frame') {
+    const tint = { yellow: '241,226,164', green: '207,224,200', blue: '201,219,232', pink: '239,201,196' }[r.data.color] || '255,255,255';
+    g.fillStyle = `rgba(${tint},.18)`;
+    g.strokeStyle = `rgba(${tint},.8)`;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.roundRect(r.x, r.y, r.w, r.h, 10);
+    g.fill();
+    g.stroke();
+    if (text) {
+      g.font = `600 14px ${SANS}`;
+      const tw = g.measureText(text).width + 20;
+      g.fillStyle = 'rgba(43,39,36,.8)';
+      g.beginPath();
+      g.roundRect(r.x - 2, r.y - 33, tw, 27, 7);
+      g.fill();
+      g.fillStyle = '#f2ede6';
+      g.textBaseline = 'middle';
+      g.fillText(text, r.x + 8, r.y - 19);
+    }
+  } else if (r.type === 'note' || r.type === 'list') {
     shadowed(g, () => { g.fillStyle = colorOf(r); g.fillRect(r.x, r.y, r.w, r.h); });
     g.fillStyle = '#26221f';
     g.font = `${r.type === 'list' ? 14 : 15}px ${SANS}`;

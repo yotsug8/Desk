@@ -334,3 +334,29 @@ body.pens-open .toasts { bottom: 138px; }
 .tpl:hover { background: #f3eee5; }
 .tpl:has(input:checked) { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc) inset; background: #fbefe9; }
 .tpl:has(input:focus-visible) { outline: 2px solid var(--acc); outline-offset: 2px; }
+
+/* Области: рамка под элементами, берётся за подпись */
+.el.frame { pointer-events: none; border-radius: 10px; border: 2px solid #ffffff8c; background: #ffffff1f; }
+.el.frame.c-yellow { border-color: #f1e2a4d0; background: #f1e2a42e; }
+.el.frame.c-green { border-color: #cfe0c8d0; background: #cfe0c82e; }
+.el.frame.c-blue { border-color: #c9dbe8d0; background: #c9dbe82e; }
+.el.frame.c-pink { border-color: #efc9c4d0; background: #efc9c42e; }
+.el.frame .ftitle { position: absolute; left: -2px; bottom: 100%; margin-bottom: 6px; max-width: calc(100% + 4px); min-width: 70px; padding: 4px 10px; border-radius: 7px; background: #2b2724cc; color: #f2ede6; font: 600 14px/1.35 var(--sans); pointer-events: auto; cursor: grab; transform-origin: 0 100%; transform: scale(max(1, var(--inv, 1) * .8)); }
+.el.frame .ftitle .body { height: auto; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.el.frame .ftitle textarea { padding: 4px 10px; white-space: pre; cursor: text; }
+.el.frame .grip { pointer-events: auto; }
+.el.frame.sel { outline-offset: 2px; }
+.el.frame.sel .ftitle { background: var(--acc); }
+.el.frame .vote, .el.frame .votes { pointer-events: auto; }
+.world.searching .el.frame:not(.found) { opacity: .4; }
+
+/* Общий таймер */
+.timer { position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 4px 0 12px; overflow: hidden; font-variant-numeric: tabular-nums; }
+.timer b { font-weight: 600; font-size: 15px; letter-spacing: .02em; }
+.timer::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: calc(var(--p, 0) * 100%); background: var(--acc); transition: width .25s linear; }
+.timer.soon b { color: #f0b36b; }
+.timer.done { animation: ring .5s ease-in-out 4; }
+@keyframes ring { 50% { background: var(--acc); } }
+.mins { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.mins .minibtn { color: var(--ink); border-color: var(--line); height: 34px; padding: 0 14px; }
+.mins .minibtn:hover { background: #f3eee5; }

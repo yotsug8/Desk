@@ -46,7 +46,7 @@ export function initHistory(B, d) {
     const t = (s?.data?.text || '').replace(/\s+/g, ' ').trim();
     return t ? `«${t.length > 28 ? t.slice(0, 28) + '...' : t}»` : '';
   };
-  const kind = (s) => ({ text: 'надпись', link: 'связь', draw: 'рисунок', list: 'список', image: 'фото' }[s?.type] || 'заметка');
+  const kind = (s) => ({ text: 'надпись', link: 'связь', draw: 'рисунок', list: 'список', image: 'фото', frame: 'область' }[s?.type] || 'заметка');
 
   function describe(g) {
     const r = g.row;

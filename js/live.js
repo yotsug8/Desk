@@ -22,6 +22,8 @@ export function connectLive(B, h) {
     .on('broadcast', { event: 's' }, ({ payload }) => h.onSummon(payload))
     .on('broadcast', { event: 'kick' }, ({ payload }) => payload.u === uid && h.onKick())
     .on('broadcast', { event: 'ask' }, () => sendViewport())
+    .on('broadcast', { event: 't' }, ({ payload }) => h.onTimer?.(payload))
+    .on('broadcast', { event: 'tq' }, () => h.onTimerAsk?.())
     .on('postgres_changes', { event: '*', schema: 'public', table: 'votes', filter }, (p) => p.new?.id && h.onVote(p.new))
     .on('postgres_changes', { event: '*', schema: 'public', table: 'requests', filter }, (p) => p.new?.id && h.onRequest(p.new))
     .on('presence', { event: 'sync' }, () => {
@@ -34,6 +36,7 @@ export function connectLive(B, h) {
         h.onStatus(true);
         track();
         sendHold();
+        send('tq', {}); // идёт ли у кого-то таймер
         if (everJoined) h.onResync();
         everJoined = true;
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -91,6 +94,7 @@ export function connectLive(B, h) {
     },
     askViewport: () => send('ask', {}),
     kick: (u) => send('kick', { u }),
+    timer: (p) => send('t', p),
     summon: (x, y, s) => send('s', { u: uid, x: Math.round(x), y: Math.round(y), s }),
   };
 }

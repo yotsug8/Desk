@@ -10,6 +10,7 @@ import { corkOn } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, toggleMinimap, minimapOn, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
 import { initClip, duplicateSel } from './clip.js';
+import { initTimer, onTimer, onTimerAsk, timerDialog } from './timer.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'white'];
@@ -17,6 +18,7 @@ const TEXT_COLORS = ['ink', 'white', 'red'];
 const LINK_COLORS = ['red', 'ink', 'blue', 'white'];
 const DRAW_COLORS = ['white', 'ink', 'red', 'blue', 'yellow'];
 const LIST_COLORS = ['white', 'yellow', 'blue'];
+const FRAME_COLORS = ['white', 'yellow', 'green', 'blue', 'pink'];
 const DRAW = { white: '#fdf3df', ink: '#2a1f14', red: '#b3261e', blue: '#2f5d8a', yellow: '#f6d860' };
 const WIDTHS = [3, 6, 12];
 const SWATCH = {
@@ -110,9 +112,12 @@ export async function startBoard(opts) {
     },
     onStatus: (ok) => { B.online = ok; updateStatus(); },
     onResync: resync,
+    onTimer,
+    onTimerAsk,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
   initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q) });
+  initTimer(B, { openModal, myName: () => B.members.get(B.me.user_id)?.name || B.me.name || '' });
   initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });
 
   B.loaded = true;
@@ -208,6 +213,7 @@ function toggleMenu(force) {
     ['invite', 'link', 'Пригласить'],
     ['history', 'clock', 'История и откат'],
     ['summon', 'bell', 'Позвать всех сюда'],
+    canEdit() ? ['timer', 'timer', 'Таймер'] : null,
     ['find', 'search', 'Найти на доске'],
     ['fit', 'fit', 'Показать всю доску'],
     ['minimap', 'map', minimapOn() ? 'Скрыть мини-карту' : 'Показать мини-карту'],
@@ -232,6 +238,7 @@ function toggleMenu(force) {
     if (m === 'summon') summon();
     if (m === 'fit') fitCamera(true);
     if (m === 'find') openFind();
+    if (m === 'timer') timerDialog();
     if (m === 'minimap') toggleMinimap();
     if (m === 'export') exportDialog();
     if (m === 'install') installApp();
@@ -247,7 +254,7 @@ function toggleMenu(force) {
 async function trashDialog() {
   let list = [];
   try { list = await call('trash_list', { p_board: B.id }); } catch (err) { return toast(err.message, true); }
-  const kinds = { note: 'Заметка', text: 'Текст', list: 'Список', draw: 'Рисунок', image: 'Фото' };
+  const kinds = { note: 'Заметка', text: 'Текст', list: 'Список', draw: 'Рисунок', image: 'Фото', frame: 'Область' };
   const when = (iso) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const { root, close } = openModal(`
     <h3>Корзина</h3>
@@ -330,7 +337,7 @@ async function peopleDialog() {
 
 function keysDialog() {
   const rows = [
-    ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['P', 'фото'],
+    ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['F', 'область'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
     ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Правый клик', 'меню элемента'],
   ];
@@ -347,6 +354,7 @@ const LEDGE = [
   { tool: 'text', label: 'Текст', icon: 'text', edit: true, key: 'T' },
   { tool: 'draw', label: 'Рисунок', icon: 'pencil', edit: true, key: 'D' },
   { tool: 'link', label: 'Связь', icon: 'connect', edit: true, key: 'L' },
+  { tool: 'frame', label: 'Область', icon: 'frame', edit: true, key: 'F' },
   { act: 'photo', label: 'Фото', icon: 'image', edit: true, key: 'P' },
 ];
 
@@ -819,10 +827,10 @@ function renderEl(id) {
   const color = v.data.color || DEFAULT_COLOR[t] || 'ink';
   const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.myDrag.has(id) ? ' lift' : '');
   node.className = `el ${t} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
-  if (t !== 'draw') node.style.setProperty('--rot', tilt(id) + 'deg');
+  if (t !== 'draw' && t !== 'frame') node.style.setProperty('--rot', tilt(id) + 'deg');
   node.style.left = v.x + 'px';
   node.style.top = v.y + 'px';
-  if (t === 'note' || t === 'draw') {
+  if (t === 'note' || t === 'draw' || t === 'frame') {
     node.style.width = v.w + 'px';
     node.style.height = v.h + 'px';
   } else if (t === 'list' || t === 'image') {
@@ -876,7 +884,7 @@ function renderEl(id) {
   } else lockMark?.remove();
 
   let grip = node.querySelector('.grip');
-  if (!grip && canEdit() && (t === 'note' || t === 'list' || t === 'image')) {
+  if (!grip && canEdit() && (t === 'note' || t === 'list' || t === 'image' || t === 'frame')) {
     grip = document.createElement('div'); grip.className = 'grip'; node.append(grip);
   }
 
@@ -898,10 +906,11 @@ function renderEl(id) {
 const SKELETON = {
   draw: '<svg class="ink-svg"><path class="hit"/><path class="ink"/></svg>',
   list: '<div class="body list-body"></div>',
+  frame: '<div class="ftitle edit-host"><div class="body"></div></div>',
   image: '<span class="tape"></span><img alt="" draggable="false"><div class="cap edit-host"><div class="body"></div></div>',
 };
-const DEFAULT_COLOR = { note: 'yellow', text: 'ink', list: 'white', draw: 'white' };
-const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись', list: 'список', image: 'подпись' };
+const DEFAULT_COLOR = { note: 'yellow', text: 'ink', list: 'white', draw: 'white', frame: 'white' };
+const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись', list: 'список', image: 'подпись', frame: 'область' };
 
 // Список: строки «[ ] дело» и «[x] дело» становятся галочками, остальные заголовками
 function renderList(body, text) {
@@ -921,7 +930,7 @@ function moveNode(id) {
   if (!node || !r || B.past) return renderEl(id);
   node.style.left = r.x + 'px';
   node.style.top = r.y + 'px';
-  if (r.type === 'note') {
+  if (r.type === 'note' || r.type === 'frame') {
     node.style.width = r.w + 'px';
     node.style.height = r.h + 'px';
   } else if (r.type === 'list' || r.type === 'image') node.style.width = r.w + 'px';
@@ -937,7 +946,8 @@ function queueReorder() {
 
 // Порядок наложения: по полю z, в CSS идёт номер по порядку
 function reorder() {
-  const list = [...B.nodes.entries()].sort((a, b) => Number(a[1].dataset.z) - Number(b[1].dataset.z));
+  const under = (n) => (n.classList.contains('frame') ? 0 : 1);
+  const list = [...B.nodes.entries()].sort((a, b) => under(a[1]) - under(b[1]) || Number(a[1].dataset.z) - Number(b[1].dataset.z));
   list.forEach(([, n], i) => { n.style.zIndex = i + 1; });
 }
 
@@ -1176,12 +1186,13 @@ function onHold({ u, ids, m }) {
 // ---------- Создание, удаление, правка ----------
 
 async function createEl(type, wx, wy) {
-  const note = type === 'note' || type === 'list';
-  const w = type === 'list' ? 240 : note ? 200 : 300, h = type === 'list' ? 160 : note ? 170 : 50;
+  const frame = type === 'frame';
+  const note = type === 'note' || type === 'list' || frame;
+  const w = frame ? 640 : type === 'list' ? 240 : note ? 200 : 300, h = frame ? 420 : type === 'list' ? 160 : note ? 170 : 50;
   const id = uuid();
   const row = {
     id, board_id: B.id, type, x: Math.round(wx - (note ? w / 2 : 12)), y: Math.round(wy - (note ? h / 2 : 25)), w, h,
-    z: Date.now(), data: type === 'list' ? { text: 'Список\n[ ] ', color: 'white' }
+    z: Date.now(), data: frame ? { text: '', color: 'white' } : type === 'list' ? { text: 'Список\n[ ] ', color: 'white' }
       : note ? { text: '', color: B.lastColor || 'yellow' } : { text: '', size: 36, color: 'ink' },
     version: 0, locked: false, created_by: B.me.user_id, updated_by: B.me.user_id, deleted_at: null,
   };
@@ -1228,10 +1239,26 @@ async function deleteSel(quiet) {
   }
 }
 
+// Выделение плюс всё, что лежит внутри выделенных областей (по центру элемента)
+function withContents(ids) {
+  const out = new Set(ids);
+  for (const id of ids) {
+    const f = B.els.get(id);
+    if (f?.type !== 'frame' || f.deleted_at) continue;
+    for (const r of B.els.values()) {
+      if (r.deleted_at || r.type === 'link' || r.type === 'frame' || out.has(r.id) || !mayTouch(r)) continue;
+      const n = B.nodes.get(r.id);
+      const cx = r.x + (n?.offsetWidth || r.w) / 2, cy = r.y + (n?.offsetHeight || r.h) / 2;
+      if (cx > f.x && cx < f.x + f.w && cy > f.y && cy < f.y + f.h) out.add(r.id);
+    }
+  }
+  return out;
+}
+
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
 let nudgeTimer = 0;
 function nudge([dx, dy]) {
-  const rows = [...B.sel].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link' && mayTouch(r));
+  const rows = [...withContents(B.sel)].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link' && mayTouch(r));
   if (!rows.length) return;
   for (const r of rows) {
     r.x += dx;
@@ -1345,7 +1372,7 @@ function setColor(color) {
   for (const id of B.sel) {
     const r = B.els.get(id);
     if (!r) continue;
-    const ok = ({ note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS }[r.type] || []).includes(color);
+    const ok = ({ note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS, frame: FRAME_COLORS }[r.type] || []).includes(color);
     if (!ok) continue;
     if (r.type === 'note') B.lastColor = color;
     B.els.set(id, { ...r, data: { ...r.data, color } });
@@ -1389,7 +1416,7 @@ function startEdit(id) {
   if (!row || !node || row.type === 'link') return;
   const ta = document.createElement('textarea');
   ta.value = row.data.text || '';
-  ta.maxLength = 5000;
+  ta.maxLength = row.type === 'frame' ? 80 : 5000;
   ta.spellcheck = true;
   ta.setAttribute('aria-label', 'Текст');
   (node.querySelector('.edit-host') || node).append(ta);
@@ -1408,6 +1435,7 @@ function startEdit(id) {
   ta.addEventListener('keydown', (e) => {
     e.stopPropagation();
     if (e.key === 'Escape') finishEdit();
+    if (e.key === 'Enter' && row.type === 'frame') { e.preventDefault(); finishEdit(); }
     // в списке Enter после пункта сразу начинает новый пункт
     if (e.key === 'Enter' && row.type === 'list' && !e.shiftKey) {
       const before = ta.value.slice(0, ta.selectionStart);
@@ -1431,7 +1459,7 @@ function startEdit(id) {
 function sizeTextEl(ed) {
   const node = B.nodes.get(ed.id);
   const row = B.els.get(ed.id);
-  if (!node || !['text', 'list', 'image'].includes(row?.type)) return;
+  if (!node || !['text', 'list', 'image', 'frame'].includes(row?.type)) return;
   node.querySelector('.body').textContent = ed.ta.value + '​';
   queueStrings();
 }
@@ -1538,7 +1566,7 @@ function placeSelTools(force) {
   const key = rows.map((r) => r.id + r.data.color + r.data.size).join();
   if (force || box.dataset.key !== key) {
     box.dataset.key = key;
-    const palette = types.size === 1 ? { note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS }[rows[0].type] : null;
+    const palette = types.size === 1 ? { note: NOTE_COLORS, text: TEXT_COLORS, link: LINK_COLORS, draw: DRAW_COLORS, list: LIST_COLORS, frame: FRAME_COLORS }[rows[0].type] : null;
     const tone = (c) => (types.has('link') ? STRING[c] : types.has('draw') ? DRAW[c] : SWATCH[c]);
     const cur = rows.every((r) => r.data.color === rows[0].data.color) ? rows[0].data.color : null;
     box.innerHTML = [
@@ -1664,7 +1692,7 @@ function openCtx(sx, sy, target) {
     }
   } else {
     items = canEdit()
-      ? [['note', 'note', 'Заметка', 'N'], ['list', 'list', 'Список', 'K'], ['text', 'text', 'Текст', 'T'], ['photo', 'image', 'Фото', 'P'], '-',
+      ? [['note', 'note', 'Заметка', 'N'], ['list', 'list', 'Список', 'K'], ['text', 'text', 'Текст', 'T'], ['photo', 'image', 'Фото', 'P'], ['frame', 'frame', 'Область', 'F'], '-',
         ['summon', 'bell', 'Позвать всех сюда', ''], ['fit', 'fit', 'Показать всю доску', '']]
       : [['summon', 'bell', 'Позвать всех сюда', ''], ['fit', 'fit', 'Показать всю доску', '']];
   }
@@ -1680,7 +1708,7 @@ function openCtx(sx, sy, target) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
     closeCtx();
-    if (act === 'note' || act === 'text' || act === 'list') createEl(act, w.x, w.y);
+    if (act === 'note' || act === 'text' || act === 'list' || act === 'frame') createEl(act, w.x, w.y);
     if (act === 'photo') pickPhoto();
     if (act === 'summon') summon();
     if (act === 'fit') fitCamera(true);
@@ -1783,7 +1811,7 @@ function bindInput() {
       return;
     }
 
-    if (!panBtn && !t && (B.tool === 'note' || B.tool === 'text' || B.tool === 'list') && canEdit()) {
+    if (!panBtn && !t && ['note', 'text', 'list', 'frame'].includes(B.tool) && canEdit()) {
       e.preventDefault();
       const tool = B.tool;
       setTool(null);
@@ -1826,7 +1854,7 @@ function bindInput() {
         s.has(id) ? s.delete(id) : s.add(id);
         setSelection(s);
       } else if (!wasSel) setSelection([id]);
-      const start = new Map([...B.sel].filter((i) => B.els.get(i)?.type !== 'link').map((i) => [i, { x: B.els.get(i).x, y: B.els.get(i).y }]));
+      const start = new Map([...withContents(B.sel)].filter((i) => B.els.get(i)?.type !== 'link').map((i) => [i, { x: B.els.get(i).x, y: B.els.get(i).y }]));
       g = { mode: 'press', id, wasSel, sx: e.clientX, sy: e.clientY, start, moved: false };
       return;
     }
@@ -1897,8 +1925,9 @@ function bindInput() {
     } else if (g.mode === 'resize') {
       const r = B.els.get(g.id);
       if (!g.held) { g.held = true; B.myDrag.add(g.id); B.live.hold([g.id], 'move'); }
-      r.w = Math.max(120, Math.round(g.w0 + dx / B.cam.s));
-      r.h = Math.max(90, Math.round(g.h0 + dy / B.cam.s));
+      const min = r.type === 'frame' ? [200, 140] : [120, 90];
+      r.w = Math.min(4000, Math.max(min[0], Math.round(g.w0 + dx / B.cam.s)));
+      r.h = Math.min(4000, Math.max(min[1], Math.round(g.h0 + dy / B.cam.s)));
       moveNode(g.id);
       B.live.drag([[g.id, r.x, r.y, r.w, r.h]]);
       placeSelTools();
@@ -2056,7 +2085,7 @@ function bindInput() {
     else if (!e.ctrlKey && !e.metaKey && !e.altKey && canEdit()) {
       const key = e.key.toLowerCase();
       if (key === 'p') return pickPhoto();
-      const k = { n: 'note', t: 'text', l: 'link', k: 'list', d: 'draw' }[key];
+      const k = { n: 'note', t: 'text', l: 'link', k: 'list', d: 'draw', f: 'frame' }[key];
       if (k) setTool(B.tool === k ? null : k);
     }
   });
