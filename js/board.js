@@ -7,6 +7,8 @@ import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
 import { initHistory } from './history.js';
 import { corkOn } from './cork.js';
+import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, toggleMinimap, minimapOn, exportDialog } from './extras.js';
+import { canInstall, installApp } from './pwa.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'white'];
@@ -109,6 +111,7 @@ export async function startBoard(opts) {
     onResync: resync,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
+  initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });
 
   B.loaded = true;
   renderRequests();
@@ -170,7 +173,10 @@ function toggleMenu(force) {
     ['invite', 'link', 'Пригласить'],
     ['history', 'clock', 'История и откат'],
     ['summon', 'bell', 'Позвать всех сюда'],
+    ['find', 'search', 'Найти на доске'],
     ['fit', 'fit', 'Показать всю доску'],
+    ['minimap', 'map', minimapOn() ? 'Скрыть мини-карту' : 'Показать мини-карту'],
+    ['export', 'download', 'Скачать доску'],
     ['trash', 'trash', 'Корзина'],
     ['people', 'users', 'Участники'],
     isOwner() ? ['rename', 'pencil', 'Переименовать доску'] : null,
@@ -178,6 +184,7 @@ function toggleMenu(force) {
     '-',
     ['new', 'plus', 'Новая доска'],
     ['boards', 'grid', 'Мои доски'],
+    canInstall() ? ['install', 'install', 'Установить как приложение'] : null,
   ].filter(Boolean);
   box.innerHTML = items.map((it) => (it === '-' ? '<hr>' : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span></button>`)).join('');
   box.hidden = false;
@@ -189,6 +196,10 @@ function toggleMenu(force) {
     if (m === 'history') B.history.toggle();
     if (m === 'summon') summon();
     if (m === 'fit') fitCamera(true);
+    if (m === 'find') openFind();
+    if (m === 'minimap') toggleMinimap();
+    if (m === 'export') exportDialog();
+    if (m === 'install') installApp();
     if (m === 'rename') renameDialog();
     if (m === 'keys') keysDialog();
     if (m === 'trash') trashDialog();
@@ -286,7 +297,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -674,6 +685,7 @@ function applyCamera() {
   if (!$('seltools').hidden) placeSelTools();
   const c = toWorld(innerWidth / 2, innerHeight / 2);
   B.live?.viewport(c.x, c.y, s);
+  drawMinimap();
 }
 
 function toWorld(sx, sy) {
@@ -922,7 +934,7 @@ let stringsQueued = false;
 function queueStrings() {
   if (stringsQueued) return;
   stringsQueued = true;
-  requestAnimationFrame(() => { stringsQueued = false; renderStrings(); });
+  requestAnimationFrame(() => { stringsQueued = false; renderStrings(); drawMinimap(); refreshFind(); });
 }
 
 let tempEnd = null; // куда тянется нитка, пока её ведут
@@ -1951,15 +1963,21 @@ function bindInput() {
   }, true);
 
   addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && $('modal').hidden && !B.editing) {
+      e.preventDefault();
+      return openFind();
+    }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || !$('modal').hidden) return;
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    if (e.key === '/') { e.preventDefault(); openFind(); }
+    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       e.preventDefault();
       setSelection([...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link').map((r) => r.id));
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && B.sel.size) { e.preventDefault(); deleteSel(); }
     else if (e.key === 'Escape') {
       closeCtx();
       $('menu').hidden = true;
-      if (B.past) B.history.close();
+      if (findOpen()) closeFind();
+      else if (B.past) B.history.close();
       else if (B.tool) setTool(null);
       else setSelection([]);
     } else if (e.key === 'Enter' && B.sel.size === 1) { e.preventDefault(); startEdit([...B.sel][0]); }

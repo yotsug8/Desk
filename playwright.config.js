@@ -13,6 +13,8 @@ export default defineConfig({
     baseURL: 'http://localhost:8080',
     viewport: { width: 1280, height: 800 },
     trace: 'retain-on-failure',
+    // без UTF-8 локали Chromium теряет русские имена скачанных файлов
+    launchOptions: { env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } },
   },
   webServer: {
     command: 'node tests/serve.mjs',

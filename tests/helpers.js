@@ -45,7 +45,7 @@ export async function addNote(page, x, y, text) {
   await page.keyboard.press('n');
   await page.mouse.click(x, y);
   await page.keyboard.type(text);
-  await page.mouse.click(1100, 700);
+  await page.mouse.click(1050, 560);
   await waitSaved(page);
 }
 

@@ -33,7 +33,7 @@ test('два окна: заметки, курсоры, перетаскиван�
     .toBe(await b.evaluate((i) => window.__desk.els.get(i).x, id));
 
   // удаление у Миши пропадает у Ани
-  await b.mouse.click(1100, 700);
+  await b.mouse.click(1050, 560);
   await notes(b).first().click();
   await b.keyboard.press('Delete');
   await expect(notes(a)).toHaveCount(0);
@@ -67,8 +67,8 @@ test('двое правят текст одной заметки и не зат�
   const want = 'НАЧАЛО середина КОНЕЦ';
   await expect(ta).toHaveValue(want, { timeout: 10_000 });
   await expect(tb).toHaveValue(want, { timeout: 10_000 });
-  await a.mouse.click(1100, 700);
-  await b.mouse.click(1100, 700);
+  await a.mouse.click(1050, 560);
+  await b.mouse.click(1050, 560);
   await waitSaved(a);
   await waitSaved(b);
 

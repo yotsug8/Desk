@@ -3,6 +3,7 @@ import { sb, ensureUser, rpc } from './api.js';
 import { esc, toast } from './ui.js';
 import { startBoard } from './board.js';
 import { corkOn } from './cork.js';
+import './pwa.js';
 
 const gate = document.getElementById('gate');
 const PEOPLE_COLORS = ['#e4572e', '#2a9d8f', '#7b61ff', '#d17a00', '#c2185b', '#1e88e5', '#43a047', '#6d4c41'];
@@ -181,6 +182,12 @@ async function route(opts = {}) {
   try {
     await enter(id.toLowerCase(), opts);
   } catch (err) {
+    if (!navigator.onLine) {
+      // без сети доску не открыть: ждём связь и пробуем сами
+      showGate(`${HEAD}<p class="lead">Нет интернета. Доска откроется сама, как только связь вернётся.</p>`);
+      addEventListener('online', () => location.reload(), { once: true });
+      return;
+    }
     showGate(`${HEAD}<p class="lead">${esc(err.message)}</p><button class="bigbtn" onclick="location.reload()">Повторить</button>`);
   }
 }

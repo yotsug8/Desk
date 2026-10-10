@@ -304,3 +304,23 @@ body.pens-open .toasts { bottom: 138px; }
   .mr { flex-wrap: wrap; }
   .tr .muted { display: none; }
 }
+
+/* ---------- Поиск, мини-карта, выгрузка ---------- */
+.findbar { position: absolute; left: 50%; top: 62px; transform: translateX(-50%); z-index: 26; display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; width: min(420px, calc(100vw - 24px)); }
+.findbar input { flex: 1; min-width: 0; height: 32px; border: 0; outline: 0; background: none; color: var(--panel-text); font: 14px var(--sans); }
+.findbar input::placeholder { color: var(--panel-mute); }
+.findbar input::-webkit-search-cancel-button { display: none; }
+.findbar .cnt { color: var(--panel-mute); font-size: 12px; white-space: nowrap; padding: 0 4px; }
+.ib.sm { width: 30px; height: 30px; border-radius: 8px; }
+.world .el { transition: opacity .15s; }
+.world.searching .el:not(.found) { opacity: .28; }
+.world.searching .el.cur { outline: 3px solid #f0b36b; outline-offset: 4px; }
+.minimap { position: absolute; right: var(--edge); bottom: var(--edge); z-index: 19; padding: 4px; border-radius: 12px; background: #2b2724d9; box-shadow: var(--shadow); cursor: pointer; touch-action: none; }
+.minimap canvas { display: block; border-radius: 8px; background: #b48a5e66; }
+.app:has(#history:not([hidden])) .minimap, .app:has(#pastBar:not([hidden])) .minimap { display: none; }
+@media (max-width: 760px) { .minimap { display: none; } }
+.choices { display: grid; gap: 8px; margin: 14px 0 4px; }
+.choice { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); text-align: left; color: var(--ink); }
+.choice:hover { background: #f3eee5; }
+.choice span { display: flex; flex-direction: column; gap: 2px; }
+.choice small { color: var(--mute); font-size: 12px; }

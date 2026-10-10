@@ -7,7 +7,7 @@ test('создать доску, заметку и надпись; после п
   await page.keyboard.press('t');
   await page.mouse.click(300, 150);
   await page.keyboard.type('Заголовок');
-  await page.mouse.click(1100, 700);
+  await page.mouse.click(1050, 560);
   await waitSaved(page);
 
   await page.reload();
