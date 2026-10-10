@@ -9,6 +9,7 @@ import { initHistory } from './history.js';
 import { corkOn } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, toggleMinimap, minimapOn, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
+import { initClip, duplicateSel } from './clip.js';
 
 const $ = (id) => document.getElementById(id);
 const NOTE_COLORS = ['yellow', 'pink', 'green', 'blue', 'white'];
@@ -111,36 +112,70 @@ export async function startBoard(opts) {
     onResync: resync,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
+  initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q) });
   initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });
 
   B.loaded = true;
   renderRequests();
   setInterval(updateStatus, 30000);
-  if (opts.fresh && opts.starter && canEdit()) seedBoard();
+  if (opts.fresh && TEMPLATES[opts.template] && canEdit()) seedBoard(opts.template).then(() => opts.template !== 'tips' && inviteDialog());
   else if (opts.fresh) inviteDialog();
 }
 
-// Стартовые заметки новой доски: показывают, что тут можно делать
-async function seedBoard() {
-  const N = (x, y, color, text) => ({ type: 'note', x, y, w: 210, h: 170, data: { text, color } });
-  const items = [
-    { type: 'text', x: -330, y: -330, w: 300, h: 60, data: { text: 'Наша доска', size: 44, color: 'ink' } },
-    N(-360, -200, 'yellow', 'Дважды нажми на меня, чтобы писать'),
-    N(-90, -170, 'pink', 'Тяни меня куда угодно. Доску двигай пустым местом или двумя пальцами'),
-    N(190, -210, 'green', 'Правый клик или долгое нажатие открывает меню: голос, связи, удаление'),
-    N(-300, 90, 'blue', 'Зови друзей кнопкой «Пригласить». Там же твоя ссылка владельца, сохрани её'),
-    N(80, 110, 'white', 'Ошибся или кто-то напортил? «История» сверху вернёт доску к любому моменту'),
-  ];
+// Заготовки новой доски
+const N = (x, y, color, text, w = 210, h = 170) => ({ type: 'note', x, y, w, h, data: { text, color } });
+const T = (x, y, text, size = 36) => ({ type: 'text', x, y, w: 300, h: 50, data: { text, size, color: 'ink' } });
+const L = (x, y, text, color = 'white') => ({ type: 'list', x, y, w: 250, h: 160, data: { text, color } });
+const TEMPLATES = {
+  tips: {
+    items: [
+      T(-330, -330, 'Наша доска', 44),
+      N(-360, -200, 'yellow', 'Дважды нажми на меня, чтобы писать'),
+      N(-90, -170, 'pink', 'Тяни меня куда угодно. Доску двигай пустым местом или двумя пальцами'),
+      N(190, -210, 'green', 'Правый клик или долгое нажатие открывает меню: голос, связи, удаление'),
+      N(-300, 90, 'blue', 'Зови друзей кнопкой «Пригласить». Там же твоя ссылка владельца, сохрани её'),
+      N(80, 110, 'white', 'Ошибся или кто-то напортил? «История» сверху вернёт доску к любому моменту'),
+    ],
+    links: [[1, 2], [2, 3], [4, 5]],
+  },
+  kanban: {
+    items: [
+      T(-520, -300, 'Надо сделать'), T(-150, -300, 'В работе'), T(220, -300, 'Готово'),
+      N(-520, -220, 'yellow', 'Первая задача'), N(-520, -20, 'yellow', 'Вторая задача'),
+      N(-150, -220, 'blue', 'Перетащи сюда то, чем занят'), N(220, -220, 'green', 'А сюда готовое'),
+    ],
+  },
+  retro: {
+    items: [
+      T(-520, -300, 'Что было хорошо'), T(-150, -300, 'Что мешало'), T(220, -300, 'Что попробуем'),
+      N(-520, -220, 'green', ''), N(-150, -220, 'pink', ''), N(220, -220, 'blue', ''),
+      N(-150, 20, 'white', 'Голосуйте за важное через меню заметки', 210, 120),
+    ],
+  },
+  trip: {
+    items: [
+      T(-420, -320, 'Поездка', 44),
+      L(-420, -220, 'Взять с собой\n[ ] документы\n[ ] зарядки\n[ ] аптечка\n[ ] '),
+      L(-120, -220, 'До выезда\n[ ] билеты\n[ ] жильё\n[ ] '),
+      N(180, -220, 'yellow', 'Даты и место'),
+      N(180, 0, 'blue', 'Кто едет'),
+    ],
+  },
+};
+
+async function seedBoard(name) {
+  const tpl = TEMPLATES[name];
+  if (!tpl) return;
   const ids = [];
-  for (const it of items) {
+  for (const it of tpl.items) {
     try {
       const saved = await call('el_create', { p_board: B.id, p_type: it.type, p_x: it.x, p_y: it.y, p_w: it.w, p_h: it.h, p_data: it.data, p_id: uuid() });
       applyRemote(saved);
       ids.push(saved.id);
-      await new Promise((r) => setTimeout(r, 140));
+      await new Promise((r) => setTimeout(r, 120));
     } catch (err) { toast(err.message, true); return; }
   }
-  for (const [a, b] of [[1, 2], [2, 3], [4, 5]]) {
+  for (const [a, b] of tpl.links || []) {
     try {
       const saved = await call('el_create', { p_board: B.id, p_type: 'link', p_x: 0, p_y: 0, p_w: 20, p_h: 20, p_data: { from: ids[a], to: ids[b], color: 'red' }, p_id: uuid() });
       applyRemote(saved);
@@ -297,7 +332,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -1193,6 +1228,32 @@ async function deleteSel(quiet) {
   }
 }
 
+// Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
+let nudgeTimer = 0;
+function nudge([dx, dy]) {
+  const rows = [...B.sel].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link' && mayTouch(r));
+  if (!rows.length) return;
+  for (const r of rows) {
+    r.x += dx;
+    r.y += dy;
+    B.myDrag.add(r.id);
+    moveNode(r.id);
+  }
+  placeSelTools();
+  clearTimeout(nudgeTimer);
+  nudgeTimer = setTimeout(() => {
+    const moves = rows.map((r) => ({ id: r.id, x: r.x, y: r.y }));
+    B.live.drag(rows.map((r) => [r.id, r.x, r.y, r.w, r.h]));
+    call('el_move', { p_moves: moves })
+      .catch((err) => {
+        resync();
+        if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
+        else toast(err.message, true);
+      })
+      .finally(() => rows.forEach((r) => B.myDrag.delete(r.id)));
+  }, 350);
+}
+
 // Крупное действие с чужими элементами: предлагаем отправить на одобрение
 function askApproval(kind, payload, n) {
   const { root, close } = openModal(`
@@ -1597,7 +1658,7 @@ function openCtx(sx, sy, target) {
       items.unshift(['edit', 'pencil', 'Править', 'Enter']);
       const r = B.els.get(id);
       const mayLock = r && (isOwner() || r.created_by === B.me.user_id);
-      items.push(['link', 'connect', 'Связать с...', 'L'], ['front', 'front', 'На передний план', '']);
+      items.push(['dup', 'copy', 'Дублировать', 'Ctrl+D'], ['link', 'connect', 'Связать с...', 'L'], ['front', 'front', 'На передний план', '']);
       if (mayLock) items.push(['lock', 'lock', r.locked ? 'Открепить' : 'Закрепить', '']);
       items.push('-', ['del', 'trash', 'Удалить', 'Del']);
     }
@@ -1626,6 +1687,7 @@ function openCtx(sx, sy, target) {
     if (act === 'edit') startEdit(id);
     if (act === 'link') { setTool('link'); startLink(id); }
     if (act === 'front') { setSelection([id]); bringFront(); }
+    if (act === 'dup') { if (!B.sel.has(id)) setSelection([id]); duplicateSel(); }
     if (act === 'del') { setSelection([id]); deleteSel(); }
     if (act === 'vote') voteToggle(id);
     if (act === 'lock') lockEl(id);
@@ -1972,6 +2034,13 @@ function bindInput() {
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       e.preventDefault();
       setSelection([...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link').map((r) => r.id));
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      duplicateSel();
+    } else if (e.key.startsWith('Arrow') && B.sel.size && canEdit() && !B.past) {
+      e.preventDefault();
+      const step = e.shiftKey ? 20 : 2;
+      nudge({ ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key]);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && B.sel.size) { e.preventDefault(); deleteSel(); }
     else if (e.key === 'Escape') {
       closeCtx();

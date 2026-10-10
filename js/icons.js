@@ -33,6 +33,7 @@ const P = {
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   install: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3"/>',
   map: '<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
 };
 

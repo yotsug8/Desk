@@ -49,6 +49,15 @@ function showGate(html) {
 
 const HEAD = '<h1>Доска</h1>';
 
+// Заготовки новой доски: значение, название, пояснение
+const TEMPLATES = [
+  ['tips', 'Подсказки', 'как пользоваться'],
+  ['empty', 'Пусто', 'чистая доска'],
+  ['kanban', 'Задачи', 'сделать, в работе, готово'],
+  ['retro', 'Обсуждение', 'хорошо, мешало, идеи'],
+  ['trip', 'Поездка', 'списки вещей и дел'],
+];
+
 
 // Стартовый экран: создать доску
 function landing() {
@@ -60,7 +69,10 @@ function landing() {
       <input id="name" class="field" maxlength="40" autocomplete="nickname" required>
       <label for="title">Название доски</label>
       <input id="title" class="field" maxlength="80" placeholder="Новая доска">
-      <label class="check"><input type="checkbox" id="starter" checked> начать с подсказок</label>
+      <label>С чего начать</label>
+      <div class="tpls" role="radiogroup">${TEMPLATES.map(([v, t, d], i) => `
+        <label class="tpl"><input type="radio" name="tpl" value="${v}"${i === 0 ? ' checked' : ''}><b>${t}</b><small>${d}</small></label>`).join('')}
+      </div>
       <button class="bigbtn" type="submit">Создать доску</button>
       <div class="err" id="err" hidden></div>
     </form>
@@ -77,10 +89,13 @@ function landing() {
       await ensureUser();
       const n = name.value.trim();
       store.set('name', n);
-      const res = await rpc('create_board', { p_title: root.querySelector('#title').value, p_name: n, p_color: myColor() });
+      const tpl = root.querySelector('[name=tpl]:checked').value;
+      // пустое название берём из заготовки
+      const title = root.querySelector('#title').value.trim() || ({ kanban: 'Задачи', retro: 'Обсуждение', trip: 'Поездка' }[tpl] ?? '');
+      const res = await rpc('create_board', { p_title: title, p_name: n, p_color: myColor() });
       store.set('owner-' + res.id, res.secret);
       history.replaceState(null, '', boardUrl(res.id));
-      route({ fresh: true, starter: root.querySelector('#starter').checked });
+      route({ fresh: true, template: tpl });
     } catch (err) {
       const el = root.querySelector('#err');
       el.textContent = err.message;
@@ -162,7 +177,7 @@ async function enter(id, opts) {
     title: info.title,
     me: info.me,
     fresh: opts.fresh,
-    starter: opts.starter,
+    template: opts.template,
     ownerLink: () => {
       const s = store.get('owner-' + id);
       return s ? boardUrl(id, s) : null;
