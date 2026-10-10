@@ -90,7 +90,7 @@ jobs:
         if: env.VERCEL_TOKEN != ''
         run: |
           mkdir _site
-          cp -r index.html css js _site/
+          cp -r index.html css js icons manifest.webmanifest sw.js _site/
           cd _site
           url=$(npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN")
           echo "Сайт: $url" | tee -a "$GITHUB_STEP_SUMMARY"
