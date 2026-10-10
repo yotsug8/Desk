@@ -93,4 +93,6 @@ jobs:
           cp -r index.html css js icons manifest.webmanifest sw.js _site/
           cd _site
           url=$(npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN")
-          echo "Сайт: $url" | tee -a "$GITHUB_STEP_SUMMARY"
+          # короткий адрес сайта всегда смотрит на свежую выкладку
+          npx --yes vercel@latest alias set "$url" doskaru.vercel.app --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          echo "Сайт: https://doskaru.vercel.app ($url)" | tee -a "$GITHUB_STEP_SUMMARY"
