@@ -117,7 +117,13 @@ export async function startBoard(opts) {
     onTimerAsk,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
-  initUndo(B, { call, applyRemote, resync, local: (id, patch) => { const r = B.els.get(id); if (r) { B.els.set(id, { ...r, ...patch }); renderEl(id); } } });
+  initUndo(B, {
+    call, applyRemote, resync,
+    refetch: async (ids) => {
+      const { data } = await sb.from('elements').select('*').in('id', ids);
+      (data || []).forEach(applyRemote);
+    },
+    local: (id, patch) => { const r = B.els.get(id); if (r) { B.els.set(id, { ...r, ...patch }); renderEl(id); } } });
   initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q), snap, commit });
   initTimer(B, { openModal, myName: () => B.members.get(B.me.user_id)?.name || B.me.name || '' });
   initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });

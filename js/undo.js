@@ -93,11 +93,15 @@ async function apply(target) {
     const cur = B.els.get(id);
     const patch = { x: want.x, y: want.y, w: want.w, h: want.h, data: want.data };
     A.local(id, patch);
-    const r = await A.call('el_update', { p_id: id, p_base_version: cur.version, p_patch: patch });
+    let r = await A.call('el_update', { p_id: id, p_base_version: cur.version, p_patch: patch });
+    // версия успела смениться (эхо прошлых правок ещё в пути): повторяем от свежей
+    if (r && !r.ok) r = await A.call('el_update', { p_id: id, p_base_version: r.element.version, p_patch: patch });
     if (r?.element) A.applyRemote(r.element);
   }
   if (del.length) {
     for (const id of del) A.local(id, { deleted_at: new Date().toISOString() });
     await A.call('el_delete', { p_ids: del });
   }
+  // удаление и возврат не отдают строки: берём их с сервера, чтобы опоздавшее эхо не перебило
+  if (res.length || del.length) await A.refetch([...res, ...del]);
 }

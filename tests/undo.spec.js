@@ -40,8 +40,9 @@ test('Ctrl+Z отменяет создание, перенос, цвет, тек
   await page.keyboard.press('Control+z');
   await expect(notes(page).first()).toHaveText('Раз');
 
-  // удаление и возврат
+  // удаление и возврат (пауза: два касания подряд открыли бы правку)
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(450);
   await notes(page).first().click();
   await page.keyboard.press('Delete');
   await expect(notes(page)).toHaveCount(0);
