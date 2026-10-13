@@ -47,7 +47,7 @@ function showGate(html) {
   return gate.querySelector('.card');
 }
 
-const HEAD = `<h1><svg viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="114" fill="#1f1a17"/><rect x="108" y="108" width="180" height="180" rx="44" fill="none" stroke="#e0533a" stroke-width="40"/><rect x="224" y="224" width="180" height="180" rx="44" fill="none" stroke="#1f1a17" stroke-width="64"/><rect x="224" y="224" width="180" height="180" rx="44" fill="none" stroke="#f4ecdc" stroke-width="40"/><path d="M288 184v80" stroke="#1f1a17" stroke-width="64"/><path d="M288 180v88" stroke="#e0533a" stroke-width="40"/></svg>Доска</h1>`;
+const HEAD = `<h1><svg viewBox="0 0 512 512" aria-hidden="true"><defs><clipPath id="over"><rect x="266" y="166" width="80" height="80"/></clipPath></defs><rect width="512" height="512" rx="114" fill="#1f1a17"/><rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#e0533a" stroke-width="40"/><rect x="206" y="206" width="200" height="200" rx="38" fill="none" stroke="#1f1a17" stroke-width="60"/><rect x="206" y="206" width="200" height="200" rx="38" fill="none" stroke="#f4ecdc" stroke-width="40"/><g clip-path="url(#over)"><rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#1f1a17" stroke-width="60"/><rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#e0533a" stroke-width="40"/></g></svg>Доска</h1>`;
 
 // Заготовки новой доски: значение, название, пояснение
 const TEMPLATES = [
