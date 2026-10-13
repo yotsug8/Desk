@@ -10,7 +10,6 @@ const P = {
   minus: '<path d="M5 12h14"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  front: '<path d="M12 16V5M7 10l5-5 5 5M5 20h14"/>',
   bigger: '<path d="M4 18L9 6l5 12M5.8 14h6.4M17 9v6M14 12h6"/>',
   smaller: '<path d="M4 18L9 6l5 12M5.8 14h6.4M14 12h6"/>',
   play: '<path d="M7 5l12 7-12 7z"/>',

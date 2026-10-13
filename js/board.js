@@ -1461,16 +1461,6 @@ function setSize(k) {
   placeSelTools(true);
 }
 
-function bringFront() {
-  for (const id of B.sel) {
-    const r = B.els.get(id);
-    if (!r || r.type === 'link') continue;
-    B.els.set(id, { ...r, z: Date.now() });
-    renderEl(id);
-    patchEl(id, { z: 1 });
-  }
-}
-
 // ---------- Правка текста ----------
 
 function startEdit(id) {
@@ -1644,7 +1634,6 @@ function placeSelTools(force) {
     box.innerHTML = [
       palette ? palette.map((c) => `<button class="sw${c === cur ? ' on' : ''}" data-color="${c}" style="background:${tone(c)}" aria-label="Цвет"></button>`).join('') + '<span class="vsep"></span>' : '',
       types.size === 1 && types.has('text') ? `<button class="t" data-act="smaller" title="Мельче">${icon('smaller')}</button><button class="t" data-act="bigger" title="Крупнее">${icon('bigger')}</button><span class="vsep"></span>` : '',
-      types.has('link') ? '' : `<button class="t" data-act="front" title="Наверх">${icon('front')}</button>`,
       `<button class="t danger" data-act="delete" title="Снять с доски" aria-label="Удалить">${icon('trash')}</button>`,
     ].join('');
     box.onpointerdown = (e) => e.preventDefault(); // не терять фокус редактора
@@ -1653,7 +1642,6 @@ function placeSelTools(force) {
       if (c) return setColor(c.dataset.color);
       const a = e.target.closest('[data-act]')?.dataset.act;
       if (a === 'delete') deleteSel();
-      if (a === 'front') bringFront();
       if (a === 'bigger') setSize(1.25);
       if (a === 'smaller') setSize(0.8);
     };
@@ -1786,7 +1774,6 @@ function openCtx(sx, sy, target) {
     if (act === 'fit') fitCamera(true);
     if (act === 'edit') startEdit(id);
     if (act === 'link') { setTool('link'); startLink(id); }
-    if (act === 'front') { setSelection([id]); bringFront(); }
     if (act === 'dup') { if (!B.sel.has(id)) setSelection([id]); duplicateSel(); }
     if (act === 'del') { setSelection([id]); deleteSel(); }
     if (act === 'vote') voteToggle(id);
