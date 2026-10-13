@@ -969,6 +969,18 @@ function moveNode(id) {
   queueStrings();
 }
 
+// Сдвинутое встаёт поверх сразу, сервер сделает так же (el_move)
+function raiseLocal(ids) {
+  const rows = ids.map((id) => B.els.get(id)).filter(Boolean).sort((a, b) => a.z - b.z);
+  const top = Date.now() - rows.length;
+  rows.forEach((r, i) => {
+    r.z = top + i + 1;
+    const n = B.nodes.get(r.id);
+    if (n) n.dataset.z = r.z;
+  });
+  queueReorder();
+}
+
 let reorderQueued = false;
 function queueReorder() {
   if (reorderQueued) return;
@@ -978,8 +990,8 @@ function queueReorder() {
 
 // Порядок наложения: по полю z, в CSS идёт номер по порядку
 function reorder() {
-  const under = (n) => (n.classList.contains('frame') ? 0 : 1);
-  const list = [...B.nodes.entries()].sort((a, b) => under(a[1]) - under(b[1]) || Number(a[1].dataset.z) - Number(b[1].dataset.z));
+  const layer = (id, n) => (n.classList.contains('frame') ? 0 : B.sel.has(id) ? 2 : 1);
+  const list = [...B.nodes.entries()].sort((a, b) => layer(...a) - layer(...b) || Number(a[1].dataset.z) - Number(b[1].dataset.z));
   list.forEach(([, n], i) => { n.style.zIndex = i + 1; });
 }
 
@@ -1337,6 +1349,7 @@ function nudge([dx, dy]) {
   nudgeTimer = setTimeout(() => {
     commit(nudgeFrom);
     nudgeFrom = null;
+    raiseLocal(rows.map((r) => r.id));
     const moves = rows.map((r) => ({ id: r.id, x: r.x, y: r.y }));
     B.live.drag(rows.map((r) => [r.id, r.x, r.y, r.w, r.h]));
     call('el_move', { p_moves: moves })
@@ -1676,6 +1689,7 @@ function setSelection(ids) {
   const old = B.sel;
   B.sel = new Set(ids);
   for (const id of new Set([...old, ...B.sel])) renderEl(id);
+  queueReorder();
   placeSelTools();
 }
 
@@ -2084,6 +2098,7 @@ function bindInput() {
       B.live.hold([], null);
       const ids = [...cur.start.keys()];
       if (!cancel) commit(new Map(ids.filter((id) => B.els.get(id)).map((id) => [id, { ...B.els.get(id), ...cur.start.get(id) }])));
+      if (!cancel) raiseLocal(ids);
       if (!cancel) {
         Promise.all(ids.map((id) => B.els.get(id)?._creating))
           .then(() => call('el_move', { p_moves: moves }))
