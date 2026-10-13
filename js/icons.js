@@ -45,3 +45,18 @@ export function icon(name, small = false) {
 }
 
 export const CURSOR_SVG = '<svg viewBox="0 0 18 18"><path d="M1 1l15 6-6 2-2 6z"/></svg>';
+
+// Рисунки инструментов на полке: каждый похож на то, что он создаёт
+const ART = {
+  note: '<g transform="rotate(-6 20 17)"><rect x="9" y="6" width="22" height="21" rx="1.5" fill="#f1e2a4"/><path d="M13 13h13M13 17h10M13 21h12" stroke="#8a7a45" stroke-width="1.4" stroke-linecap="round"/></g><circle cx="19.5" cy="6.5" r="3" fill="#c4553f"/><circle cx="18.6" cy="5.6" r=".9" fill="#fff" opacity=".7"/>',
+  list: '<rect x="9" y="4" width="22" height="25" rx="1.5" fill="#fbf9f4"/><rect x="12.5" y="9" width="4" height="4" rx="1" fill="#c4553f"/><path d="M13.3 11l1 1 1.6-2" stroke="#fff" stroke-width="1" fill="none" stroke-linecap="round"/><path d="M19 11h9" stroke="#9a9086" stroke-width="1.4" stroke-linecap="round"/><rect x="12.5" y="17" width="4" height="4" rx="1" fill="none" stroke="#6b625a" stroke-width="1.2"/><path d="M19 19h7" stroke="#9a9086" stroke-width="1.4" stroke-linecap="round"/><rect x="12.5" y="23" width="4" height="4" rx="1" fill="none" stroke="#6b625a" stroke-width="1.2"/>',
+  text: '<text x="20" y="25" text-anchor="middle" font-family="PT Serif, Georgia, serif" font-weight="700" font-size="21" fill="#f3e9d2">Аа</text>',
+  draw: '<path d="M6 25c4-6 7 2 11-3s5-8 9-4" stroke="#f6d860" stroke-width="2" fill="none" stroke-linecap="round"/><g transform="rotate(40 26 13)"><rect x="22.5" y="1" width="7" height="20" rx="1.2" fill="#e8a33d"/><rect x="22.5" y="1" width="7" height="4" rx="1.2" fill="#e88c9a"/><path d="M22.5 21l3.5 6 3.5-6z" fill="#f3d8b0"/><path d="M25.2 25.6l.8 1.4.8-1.4z" fill="#2b2724"/></g>',
+  link: '<path d="M9 10C15 24 25 24 31 12" stroke="#d8432f" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="9" cy="9" r="3.6" fill="#d8432f"/><circle cx="31" cy="11" r="3.6" fill="#d8432f"/><circle cx="8" cy="8" r="1" fill="#fff" opacity=".7"/><circle cx="30" cy="10" r="1" fill="#fff" opacity=".7"/>',
+  frame: '<rect x="6" y="10" width="28" height="18" rx="3" fill="#ffffff1a" stroke="#f3e9d2" stroke-width="1.6" stroke-dasharray="3.5 2.5"/><rect x="6" y="3" width="15" height="5.5" rx="1.6" fill="#f3e9d2"/>',
+  photo: '<g transform="rotate(5 20 16)"><rect x="9" y="3" width="22" height="26" rx="1.2" fill="#fbf9f4"/><rect x="11.5" y="5.5" width="17" height="15" fill="#9cc3dc"/><path d="M11.5 20.5l5-6 4 4 3-3 5 5z" fill="#5e8f5a"/><circle cx="24.5" cy="9.5" r="2" fill="#f6d860"/></g>',
+};
+
+export function toolArt(name) {
+  return `<svg class="art" viewBox="0 0 40 32" aria-hidden="true">${ART[name] || ''}</svg>`;
+}

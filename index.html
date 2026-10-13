@@ -8,7 +8,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=PT+Serif:wght@400;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=PT+Serif:wght@400;700&display=swap">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -42,15 +42,18 @@
       <div id="timer" class="bar timer" hidden></div>
       <div id="people" class="people"></div>
       <button id="btnHistory" class="bar btn" type="button"></button>
-      <button id="btnInvite" class="btn pri" type="button">Пригласить</button>
+      <button id="btnInvite" class="btn pri" type="button" aria-label="Пригласить"></button>
     </header>
     <div id="menu" class="pop menu" hidden></div>
     <div id="followBar" class="bar followbar" hidden></div>
     <div id="requests" class="requests" hidden></div>
     <div id="find" class="bar findbar" hidden></div>
-    <div id="minimap" class="minimap" hidden title="Мини-карта: нажмите, чтобы перейти"></div>
 
     <nav id="ledge" class="ledge" aria-label="Инструменты"></nav>
+    <div class="corner">
+      <div id="minimap" class="minimap" hidden title="Карта доски: нажмите, чтобы перейти"></div>
+      <div id="zoom" class="bar zoom" aria-label="Масштаб"></div>
+    </div>
     <div id="pens" class="bar pens" hidden></div>
     <div id="undo" class="undo" hidden></div>
     <div id="hint" class="hint" hidden>

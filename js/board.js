@@ -1,7 +1,7 @@
 // Доска: состояние, отрисовка элементов и ниток, камера, мышь и пальцы
 import { rpc, select, sb } from './api.js';
 import { SERVER } from './config.js';
-import { icon, CURSOR_SVG } from './icons.js';
+import { icon, toolArt, CURSOR_SVG } from './icons.js';
 import { merge3, mapCaret } from './merge.js';
 import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
@@ -203,7 +203,9 @@ function buildChrome() {
   $('boardTitle').textContent = B.title;
   $('titleLabel').classList.toggle('can', isOwner());
   $('titleLabel').onclick = () => isOwner() && renameDialog();
+  $('btnInvite').innerHTML = `${icon('link', true)}<span class="lbl">Пригласить</span>`;
   $('btnInvite').onclick = inviteDialog;
+  buildZoom();
   $('btnHistory').innerHTML = `${icon('clock', true)}<span class="lbl">История</span>`;
   $('btnHistory').onclick = () => B.history.toggle();
   $('btnMenu').innerHTML = icon('menu');
@@ -218,21 +220,22 @@ function toggleMenu(force) {
   const open = force ?? box.hidden;
   if (!open) { box.hidden = true; return; }
   const items = [
+    '#Эта доска',
     ['find', 'search', 'Найти', 'Ctrl+F'],
     ['fit', 'fit', 'Показать всю доску', ''],
+    ['export', 'download', 'Скачать', ''],
+    ['trash', 'trash', 'Корзина', ''],
+    isOwner() ? ['rename', 'pencil', 'Переименовать', ''] : null,
+    '#Вместе',
     ['summon', 'bell', 'Позвать всех сюда', ''],
     canEdit() ? ['timer', 'timer', 'Таймер', ''] : null,
-    ['export', 'download', 'Скачать', ''],
-    '-',
-    ['trash', 'trash', 'Корзина', ''],
     ['people', 'users', 'Участники', ''],
-    isOwner() ? ['rename', 'pencil', 'Переименовать', ''] : null,
-    '-',
+    '#Ещё',
     ['keys', 'keyboard', 'Горячие клавиши', ''],
     ['boards', 'grid', 'Все доски', ''],
     canInstall() ? ['install', 'install', 'Установить приложение', ''] : null,
   ].filter(Boolean);
-  box.innerHTML = items.map((it) => (it === '-' ? '<hr>' : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
+  box.innerHTML = items.map((it) => (typeof it === 'string' ? `<div class="mh">${it.slice(1)}</div>` : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
   box.hidden = false;
   box.onclick = (e) => {
     const m = e.target.closest('[data-m]')?.dataset.m;
@@ -351,13 +354,13 @@ function keysDialog() {
 }
 
 const LEDGE = [
-  { tool: 'note', label: 'Заметка', icon: 'note', edit: true, key: 'N' },
-  { tool: 'list', label: 'Список', icon: 'list', edit: true, key: 'K' },
-  { tool: 'text', label: 'Текст', icon: 'text', edit: true, key: 'T' },
-  { tool: 'draw', label: 'Рисунок', icon: 'pencil', edit: true, key: 'D' },
-  { tool: 'link', label: 'Связь', icon: 'connect', edit: true, key: 'L' },
-  { tool: 'frame', label: 'Область', icon: 'frame', edit: true, key: 'F' },
-  { act: 'photo', label: 'Фото', icon: 'image', edit: true, key: 'P' },
+  { tool: 'note', art: 'note', label: 'Заметка', icon: 'note', edit: true, key: 'N' },
+  { tool: 'list', art: 'list', label: 'Список', icon: 'list', edit: true, key: 'K' },
+  { tool: 'text', art: 'text', label: 'Текст', icon: 'text', edit: true, key: 'T' },
+  { tool: 'draw', art: 'draw', label: 'Рисунок', icon: 'pencil', edit: true, key: 'D' },
+  { tool: 'link', art: 'link', label: 'Связь', icon: 'connect', edit: true, key: 'L' },
+  { tool: 'frame', art: 'frame', label: 'Область', icon: 'frame', edit: true, key: 'F' },
+  { act: 'photo', art: 'photo', label: 'Фото', icon: 'image', edit: true, key: 'P' },
 ];
 
 function buildLedge() {
@@ -365,7 +368,7 @@ function buildLedge() {
   $('ledge').hidden = !items.length;
   $('ledge').innerHTML = items.map((t) => `
     <button class="tool${t.tool && B.tool === t.tool ? ' on' : ''}" type="button" ${t.tool ? `data-tool="${t.tool}"` : `data-act="${t.act}"`}
-      title="${t.label} (${t.key})">${icon(t.icon)}<span>${t.label}</span></button>`).join('');
+      title="${t.label} (${t.key})" aria-label="${t.label}">${toolArt(t.art)}<span>${t.label}</span></button>`).join('');
   $('ledge').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -551,6 +554,7 @@ const canEdit = () => ['owner', 'editor'].includes(B.me.role) && !B.past;
 function updateStatus() {
   const el = $('status');
   el.classList.toggle('bad', B.online === false);
+  el.classList.toggle('busy', B.online !== false && (B.online === null || B.pending > 0));
   if (B.online === null) el.textContent = 'подключаюсь';
   else if (!B.online) el.textContent = 'нет связи';
   else if (B.me.role === 'viewer') el.textContent = 'только просмотр';
@@ -708,25 +712,44 @@ function fitCamera(animated) {
   const live = [...B.els.values()].filter((e) => !e.deleted_at && e.type !== 'link');
   if (!live.length) {
     B.cam = { x: innerWidth / 2, y: innerHeight / 2, s: 1 };
-  } else if (animated) {
-    const x1 = Math.min(...live.map((e) => e.x)), y1 = Math.min(...live.map((e) => e.y));
-    const x2 = Math.max(...live.map((e) => e.x + e.w)), y2 = Math.max(...live.map((e) => e.y + e.h));
-    const mx = Math.min(160, innerWidth * 0.12), my = Math.min(260, innerHeight * 0.3);
-    const sc = Math.max(0.3, Math.min(1, (innerWidth - mx) / (x2 - x1 + 1), (innerHeight - my) / (y2 - y1 + 1)));
-    return flyTo((x1 + x2) / 2, (y1 + y2) / 2, sc, 700);
-  } else {
-    const x1 = Math.min(...live.map((e) => e.x)), y1 = Math.min(...live.map((e) => e.y));
-    const x2 = Math.max(...live.map((e) => e.x + e.w)), y2 = Math.max(...live.map((e) => e.y + e.h));
-    const mx = Math.min(160, innerWidth * 0.12), my = Math.min(260, innerHeight * 0.3);
-    const s = Math.min(1, (innerWidth - mx) / (x2 - x1 + 1), (innerHeight - my) / (y2 - y1 + 1));
-    const sc = Math.max(0.3, s);
-    B.cam = { s: sc, x: innerWidth / 2 - ((x1 + x2) / 2) * sc, y: innerHeight / 2 - ((y1 + y2) / 2) * sc };
+    return applyCamera();
   }
+  const x1 = Math.min(...live.map((e) => e.x)), y1 = Math.min(...live.map((e) => e.y));
+  const x2 = Math.max(...live.map((e) => e.x + e.w)), y2 = Math.max(...live.map((e) => e.y + e.h));
+  // место под верхнюю строку и полку
+  const top = 70, bottom = innerHeight < 520 ? 60 : 96, side = Math.min(48, innerWidth * 0.06);
+  const fit = Math.min(1, (innerWidth - side * 2) / (x2 - x1 + 1), (innerHeight - top - bottom) / (y2 - y1 + 1));
+  // на телефоне мельче не уходим, иначе текст не прочесть: показываем начало доски
+  const small = innerWidth < 640 || innerHeight < 520;
+  const sc = Math.max(small ? 0.7 : 0.3, fit);
+  let cx = (x1 + x2) / 2, cy = (y1 + y2) / 2 + (bottom - top) / 2 / sc;
+  if (sc > fit) {
+    if ((x2 - x1) * sc > innerWidth - side * 2) cx = x1 - side / sc + innerWidth / 2 / sc;
+    if ((y2 - y1) * sc > innerHeight - top - bottom) cy = y1 - (top + 20) / sc + innerHeight / 2 / sc;
+  }
+  if (animated) return flyTo(cx, cy, sc, 700);
+  B.cam = { s: sc, x: innerWidth / 2 - cx * sc, y: innerHeight / 2 - cy * sc };
   applyCamera();
+}
+
+// Кнопки масштаба: минус, проценты (нажатие показывает всю доску), плюс
+function buildZoom() {
+  $('zoom').innerHTML = `<button class="ib minus" data-z="out" title="Мельче (−)" aria-label="Мельче">${icon('minus', true)}</button>
+    <button class="pct" data-z="fit" title="Показать всю доску (0 для 100%)"></button>
+    <button class="ib plus" data-z="in" title="Крупнее (+)" aria-label="Крупнее">${icon('plus', true)}</button>`;
+  $('zoom').onclick = (e) => {
+    const z = e.target.closest('[data-z]')?.dataset.z;
+    manualCamera();
+    if (z === 'in') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
+    if (z === 'out') zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
+    if (z === 'fit') fitCamera(true);
+  };
 }
 
 function applyCamera() {
   const { x, y, s } = B.cam;
+  const pct = $('zoom').querySelector('.pct');
+  if (pct) pct.textContent = Math.round(s * 100) + '%';
   $('world').style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   $('world').style.setProperty('--inv', 1 / s);
   corkOn($('app'), B.cam);
@@ -1265,6 +1288,34 @@ function withContents(ids) {
   return out;
 }
 
+// Правка на телефоне: клавиатура съедает низ экрана, сдвигаем доску так,
+// чтобы элемент был виден над ней и в читаемом размере
+function keepInView(id) {
+  const fix = () => {
+    const node = B.nodes.get(id);
+    if (!node || B.editing?.id !== id) return;
+    const vv = window.visualViewport;
+    const vh = vv ? vv.height : innerHeight, vt = vv ? vv.offsetTop : 0;
+    const r = node.getBoundingClientRect();
+    const small = innerWidth < 640;
+    const s = small && B.cam.s < 0.9 ? 1 : B.cam.s;
+    const k = s / B.cam.s;
+    const w = r.width * k, h = r.height * k;
+    // куда поставить элемент: под верхней строкой, по центру по горизонтали, если не влезает
+    const wantTop = vt + 64;
+    const fits = r.top >= vt + 56 && r.top + Math.min(h, 160) <= vt + vh - 12 && r.left >= 4 && r.right <= innerWidth - 4;
+    if (fits && k === 1) return;
+    const wx = (r.left - B.cam.x) / B.cam.s, wy = (r.top - B.cam.y) / B.cam.s;
+    const sx = w < innerWidth - 16 ? (innerWidth - w) / 2 : 8;
+    manualCamera();
+    B.cam = { s, x: sx - wx * s, y: wantTop - wy * s };
+    applyCamera();
+  };
+  fix();
+  // клавиатура выезжает не сразу
+  if (matchMedia('(pointer: coarse)').matches) setTimeout(fix, 350);
+}
+
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
 let nudgeTimer = 0, nudgeFrom = null;
 function nudge([dx, dy]) {
@@ -1465,6 +1516,8 @@ function startEdit(id) {
   });
   ta.addEventListener('blur', () => setTimeout(() => { if (B.editing === ed && document.activeElement !== ta) finishEdit(); }, 0));
   B.live.hold([id], 'edit');
+  document.body.classList.add('editing');
+  keepInView(id);
   placeSelTools();
 }
 
@@ -1539,6 +1592,7 @@ function finishEdit() {
   const ed = B.editing;
   if (!ed) return;
   B.editing = null;
+  document.body.classList.remove('editing');
   const text = ed.ta.value;
   const row = B.els.get(ed.id);
   if (row) B.els.set(ed.id, { ...row, data: { ...row.data, text } });
