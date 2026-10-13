@@ -4,9 +4,8 @@ import { readFileSync } from 'node:fs';
 
 const svg = readFileSync(new URL('../icons/icon.svg', import.meta.url), 'utf8');
 // без скруглений и с полями: для Android (maskable) и iOS, они сами режут форму
-const square = svg.replace(/<rect width="512" height="512" rx="112"/, '<rect width="512" height="512"')
-  .replace('<g transform="rotate(-7', '<g transform="translate(256 262) scale(.8) translate(-256 -262)"><g transform="rotate(-7')
-  .replace('<circle cx="252"', '</g><g transform="translate(256 262) scale(.8) translate(-256 -262)"><circle cx="252"')
+const square = svg
+  .replace(/<rect width="512" height="512" rx="\d+" fill="([^"]+)"\/>/, '<rect width="512" height="512" fill="$1"/><g transform="translate(256 256) scale(.78) translate(-256 -256)">')
   .replace('</svg>', '</g></svg>');
 
 const out = [
