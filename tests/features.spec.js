@@ -143,8 +143,8 @@ test('уведомление и ярлычок «вернуть» не пере�
   await notes(page).first().click();
   await page.keyboard.press('Delete');
   await expect(page.locator('#undo')).toBeVisible();
-  await page.mouse.click(900, 400, { button: 'right' });
-  await page.click('#ctx [data-act=summon]');
+  await page.click('#btnMenu');
+  await page.click('#menu [data-m=summon]');
   const t = await page.locator('.toast').last().boundingBox();
   const u = await page.locator('#undo').boundingBox();
   const overlap = !(t.y >= u.y + u.height || u.y >= t.y + t.height);

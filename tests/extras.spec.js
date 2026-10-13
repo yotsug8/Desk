@@ -25,7 +25,7 @@ test('поиск подсвечивает совпадения и переход
   await expect(page.locator('#world')).not.toHaveClass(/searching/);
 });
 
-test('мини-карта видна, по нажатию переносит взгляд, скрывается из меню', async ({ page }) => {
+test('мини-карта видна и по нажатию переносит взгляд', async ({ page }) => {
   await createBoard(page);
   await expect(page.locator('#minimap')).toBeHidden();
   await addNote(page, 400, 300, 'Раз');
@@ -37,11 +37,6 @@ test('мини-карта видна, по нажатию переносит в�
   await page.mouse.click(box.x + 6, box.y + 6);
   expect(await cam()).not.toEqual(before);
 
-  await page.click('#btnMenu');
-  await page.click('#menu [data-m=minimap]');
-  await expect(page.locator('#minimap')).toBeHidden();
-  await page.click('#btnMenu');
-  await expect(page.locator('#menu [data-m=minimap]')).toHaveText('Показать мини-карту');
 });
 
 test('доска скачивается текстом и картинкой', async ({ page }) => {

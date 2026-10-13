@@ -360,3 +360,6 @@ body.pens-open .toasts { bottom: 138px; }
 .mins { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
 .mins .minibtn { color: var(--ink); border-color: var(--line); height: 34px; padding: 0 14px; }
 .mins .minibtn:hover { background: #f3eee5; }
+
+/* Выделение рамкой */
+.boxsel { position: absolute; z-index: 18; pointer-events: none; border: 1.5px solid var(--acc); background: #c4553f1a; border-radius: 3px; }

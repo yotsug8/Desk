@@ -7,9 +7,10 @@ import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
 import { initHistory } from './history.js';
 import { corkOn } from './cork.js';
-import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, toggleMinimap, minimapOn, exportDialog } from './extras.js';
+import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
 import { initClip, duplicateSel } from './clip.js';
+import { initUndo, snap, commit, justCreated, refreshTop, undo, redo, canUndo } from './undo.js';
 import { initTimer, onTimer, onTimerAsk, timerDialog } from './timer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -116,7 +117,8 @@ export async function startBoard(opts) {
     onTimerAsk,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
-  initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q) });
+  initUndo(B, { call, applyRemote, resync, local: (id, patch) => { const r = B.els.get(id); if (r) { B.els.set(id, { ...r, ...patch }); renderEl(id); } } });
+  initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q), snap, commit });
   initTimer(B, { openModal, myName: () => B.members.get(B.me.user_id)?.name || B.me.name || '' });
   initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });
 
@@ -210,43 +212,37 @@ function toggleMenu(force) {
   const open = force ?? box.hidden;
   if (!open) { box.hidden = true; return; }
   const items = [
-    ['invite', 'link', 'Пригласить'],
-    ['history', 'clock', 'История и откат'],
-    ['summon', 'bell', 'Позвать всех сюда'],
-    canEdit() ? ['timer', 'timer', 'Таймер'] : null,
-    ['find', 'search', 'Найти на доске'],
-    ['fit', 'fit', 'Показать всю доску'],
-    ['minimap', 'map', minimapOn() ? 'Скрыть мини-карту' : 'Показать мини-карту'],
-    ['export', 'download', 'Скачать доску'],
-    ['trash', 'trash', 'Корзина'],
-    ['people', 'users', 'Участники'],
-    isOwner() ? ['rename', 'pencil', 'Переименовать доску'] : null,
-    ['keys', 'keyboard', 'Горячие клавиши'],
+    ['find', 'search', 'Найти', 'Ctrl+F'],
+    ['fit', 'fit', 'Показать всю доску', ''],
+    ['summon', 'bell', 'Позвать всех сюда', ''],
+    canEdit() ? ['timer', 'timer', 'Таймер', ''] : null,
+    ['export', 'download', 'Скачать', ''],
     '-',
-    ['new', 'plus', 'Новая доска'],
-    ['boards', 'grid', 'Мои доски'],
-    canInstall() ? ['install', 'install', 'Установить как приложение'] : null,
+    ['trash', 'trash', 'Корзина', ''],
+    ['people', 'users', 'Участники', ''],
+    isOwner() ? ['rename', 'pencil', 'Переименовать', ''] : null,
+    '-',
+    ['keys', 'keyboard', 'Горячие клавиши', ''],
+    ['boards', 'grid', 'Все доски', ''],
+    canInstall() ? ['install', 'install', 'Установить приложение', ''] : null,
   ].filter(Boolean);
-  box.innerHTML = items.map((it) => (it === '-' ? '<hr>' : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span></button>`)).join('');
+  box.innerHTML = items.map((it) => (it === '-' ? '<hr>' : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
   box.hidden = false;
   box.onclick = (e) => {
     const m = e.target.closest('[data-m]')?.dataset.m;
     if (!m) return;
     box.hidden = true;
-    if (m === 'invite') inviteDialog();
-    if (m === 'history') B.history.toggle();
     if (m === 'summon') summon();
     if (m === 'fit') fitCamera(true);
     if (m === 'find') openFind();
     if (m === 'timer') timerDialog();
-    if (m === 'minimap') toggleMinimap();
     if (m === 'export') exportDialog();
     if (m === 'install') installApp();
     if (m === 'rename') renameDialog();
     if (m === 'keys') keysDialog();
     if (m === 'trash') trashDialog();
     if (m === 'people') peopleDialog();
-    if (m === 'new' || m === 'boards') location.href = './';
+    if (m === 'boards') location.href = './';
   };
 }
 
@@ -339,7 +335,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['F', 'область'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Shift + протянуть', 'выделить рамкой'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + Z', 'отменить'], ['Ctrl + Shift + Z', 'повторить'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -458,6 +454,7 @@ async function saveStroke(raw) {
   B.quiet = true; renderEl(id); B.quiet = false;
   try {
     applyRemote(await call('el_create', { p_board: B.id, p_type: 'draw', p_x: x, p_y: y, p_w: w, p_h: h, p_data: data, p_id: id }));
+    commit(new Map([[id, null]]));
   } catch (err) {
     toast(err.message, true);
     B.els.delete(id);
@@ -501,6 +498,7 @@ async function addPhoto(file, at) {
       p_data: { src, text: '' }, p_id: uuid(),
     });
     applyRemote(saved);
+    commit(new Map([[saved.id, null]]));
     setSelection([saved.id]);
   } catch (err) {
     toast(err instanceof DOMException ? 'Не получилось открыть картинку' : err.message || 'Не удалось добавить фото', true);
@@ -520,7 +518,9 @@ async function toggleItem(id, idx) {
   const r = B.els.get(id);
   if (!r || !canEdit()) return;
   const text = flip(r.data.text || '');
+  const before = snap([id]);
   B.els.set(id, { ...r, data: { ...r.data, text } });
+  commit(before);
   renderEl(id);
   await r._creating;
   try {
@@ -1093,6 +1093,7 @@ async function finishLink(to) {
   try {
     const saved = await call('el_create', { p_board: B.id, p_type: 'link', p_x: 0, p_y: 0, p_w: 20, p_h: 20, p_data: row.data, p_id: id });
     applyRemote(saved);
+    commit(new Map([[id, null]]));
   } catch (err) {
     toast(err.message, true);
     B.els.delete(id);
@@ -1208,6 +1209,7 @@ async function createEl(type, wx, wy) {
       B.els.set(id, { ...saved, data: { ...saved.data, text: cur.data.text } });
     }
     if (B.editing?.id === id && B.editing.version < saved.version) B.editing.version = saved.version;
+    commit(new Map([[id, null]]));
   }).catch((err) => {
     toast(err.message, true);
     B.els.delete(id);
@@ -1222,6 +1224,7 @@ async function deleteSel(quiet) {
   if (!ids.length || !canEdit()) return;
   if (!ids.every((id) => mayTouch(B.els.get(id)))) return;
   finishEdit();
+  const before = snap(ids);
   for (const id of ids) {
     const r = B.els.get(id);
     if (r) { B.els.set(id, { ...r, deleted_at: new Date().toISOString() }); renderEl(id); }
@@ -1231,6 +1234,7 @@ async function deleteSel(quiet) {
   queueStrings();
   try {
     await call('el_delete', { p_ids: ids });
+    commit(before);
     if (!quiet) undoChip(ids);
   } catch (err) {
     resync();
@@ -1256,10 +1260,11 @@ function withContents(ids) {
 }
 
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
-let nudgeTimer = 0;
+let nudgeTimer = 0, nudgeFrom = null;
 function nudge([dx, dy]) {
   const rows = [...withContents(B.sel)].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link' && mayTouch(r));
   if (!rows.length) return;
+  if (!nudgeFrom) nudgeFrom = snap(rows.map((r) => r.id));
   for (const r of rows) {
     r.x += dx;
     r.y += dy;
@@ -1269,6 +1274,8 @@ function nudge([dx, dy]) {
   placeSelTools();
   clearTimeout(nudgeTimer);
   nudgeTimer = setTimeout(() => {
+    commit(nudgeFrom);
+    nudgeFrom = null;
     const moves = rows.map((r) => ({ id: r.id, x: r.x, y: r.y }));
     B.live.drag(rows.map((r) => [r.id, r.x, r.y, r.w, r.h]));
     call('el_move', { p_moves: moves })
@@ -1345,13 +1352,9 @@ function undoChip(ids) {
   box.hidden = false;
   clearTimeout(undoTimer);
   undoTimer = setTimeout(() => { box.hidden = true; }, 5000);
-  box.querySelector('button').onclick = async () => {
+  box.querySelector('button').onclick = () => {
     box.hidden = true;
-    for (const id of ids) {
-      const r = B.els.get(id);
-      if (r) { B.els.set(id, { ...r, deleted_at: null }); renderEl(id); }
-    }
-    try { await call('el_restore', { p_ids: ids }); } catch (err) { toast(err.message, true); resync(); }
+    undo();
   };
 }
 
@@ -1369,6 +1372,7 @@ async function patchEl(id, patch) {
 }
 
 function setColor(color) {
+  const before = snap(B.sel);
   for (const id of B.sel) {
     const r = B.els.get(id);
     if (!r) continue;
@@ -1379,10 +1383,12 @@ function setColor(color) {
     renderEl(id);
     patchEl(id, { data: { color } });
   }
+  commit(before);
   placeSelTools(true);
 }
 
 function setSize(k) {
+  const before = snap(B.sel);
   for (const id of B.sel) {
     const r = B.els.get(id);
     if (r?.type !== 'text') continue;
@@ -1391,6 +1397,7 @@ function setSize(k) {
     renderEl(id);
     patchEl(id, { data: { size } }).then(() => syncTextBox(id));
   }
+  commit(before);
   placeSelTools(true);
 }
 
@@ -1420,7 +1427,7 @@ function startEdit(id) {
   ta.spellcheck = true;
   ta.setAttribute('aria-label', 'Текст');
   (node.querySelector('.edit-host') || node).append(ta);
-  const ed = { id, base: ta.value, version: row.version, ta, timer: 0, saving: false, again: false };
+  const ed = { id, base: ta.value, version: row.version, ta, timer: 0, saving: false, again: false, before: snap([id]) };
   B.editing = ed;
   B.sel = new Set([id]);
   renderEl(id);
@@ -1529,6 +1536,8 @@ function finishEdit() {
   const text = ed.ta.value;
   const row = B.els.get(ed.id);
   if (row) B.els.set(ed.id, { ...row, data: { ...row.data, text } });
+  if (justCreated(ed.id)) refreshTop(ed.id);
+  else commit(ed.before);
   ed.ta.remove();
   flushText(ed);
   B.live.hold([], null);
@@ -1686,15 +1695,15 @@ function openCtx(sx, sy, target) {
       items.unshift(['edit', 'pencil', 'Править', 'Enter']);
       const r = B.els.get(id);
       const mayLock = r && (isOwner() || r.created_by === B.me.user_id);
-      items.push(['dup', 'copy', 'Дублировать', 'Ctrl+D'], ['link', 'connect', 'Связать с...', 'L'], ['front', 'front', 'На передний план', '']);
+      items.push(['dup', 'copy', 'Дублировать', 'Ctrl+D'], ['link', 'connect', 'Связать с...', 'L']);
       if (mayLock) items.push(['lock', 'lock', r.locked ? 'Открепить' : 'Закрепить', '']);
       items.push('-', ['del', 'trash', 'Удалить', 'Del']);
     }
   } else {
     items = canEdit()
-      ? [['note', 'note', 'Заметка', 'N'], ['list', 'list', 'Список', 'K'], ['text', 'text', 'Текст', 'T'], ['photo', 'image', 'Фото', 'P'], ['frame', 'frame', 'Область', 'F'], '-',
-        ['summon', 'bell', 'Позвать всех сюда', ''], ['fit', 'fit', 'Показать всю доску', '']]
-      : [['summon', 'bell', 'Позвать всех сюда', ''], ['fit', 'fit', 'Показать всю доску', '']];
+      ? [['note', 'note', 'Заметка', 'N'], ['list', 'list', 'Список', 'K'], ['text', 'text', 'Текст', 'T'], ['photo', 'image', 'Фото', 'P'], ['frame', 'frame', 'Область', 'F'],
+        ...(canUndo() ? ['-', ['undo', 'undo', 'Отменить', 'Ctrl+Z']] : [])]
+      : [['fit', 'fit', 'Показать всю доску', '']];
   }
   if (!items.length) return;
   const box = $('ctx');
@@ -1719,6 +1728,7 @@ function openCtx(sx, sy, target) {
     if (act === 'del') { setSelection([id]); deleteSel(); }
     if (act === 'vote') voteToggle(id);
     if (act === 'lock') lockEl(id);
+    if (act === 'undo') undo();
   };
 }
 
@@ -1859,6 +1869,13 @@ function bindInput() {
       return;
     }
 
+    // Shift + протяжка по пустому месту: выделение рамкой
+    if (!panBtn && !t && e.shiftKey && !B.tool) {
+      e.preventDefault();
+      g = { mode: 'box', sx: e.clientX, sy: e.clientY, keep: new Set(B.sel), moved: false };
+      return;
+    }
+
     if (!panBtn && id && !canEdit()) setSelection([]);
     g = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: B.cam.x, cy: B.cam.y, moved: false, empty: !t };
   });
@@ -1899,7 +1916,23 @@ function bindInput() {
     g.moved = true;
     clearTimeout(longPress);
 
-    if (g.mode === 'pan') {
+    if (g.mode === 'box') {
+      let box = $('boxsel');
+      if (!box) { box = document.createElement('div'); box.id = 'boxsel'; box.className = 'boxsel'; $('app').append(box); }
+      const x1 = Math.min(g.sx, e.clientX), y1 = Math.min(g.sy, e.clientY);
+      Object.assign(box.style, { left: x1 + 'px', top: y1 + 'px', width: Math.abs(dx) + 'px', height: Math.abs(dy) + 'px' });
+      const a = toWorld(x1, y1), b = toWorld(Math.max(g.sx, e.clientX), Math.max(g.sy, e.clientY));
+      const hit = [...B.els.values()].filter((r) => {
+        if (r.deleted_at || r.type === 'link') return false;
+        const n = B.nodes.get(r.id);
+        const w = n?.offsetWidth || r.w, h = n?.offsetHeight || r.h;
+        // область выделяется, только если попала целиком, остальное достаточно задеть
+        return r.type === 'frame'
+          ? r.x >= a.x && r.y >= a.y && r.x + w <= b.x && r.y + h <= b.y
+          : r.x < b.x && r.x + w > a.x && r.y < b.y && r.y + h > a.y;
+      }).map((r) => r.id);
+      setSelection(new Set([...g.keep, ...hit]));
+    } else if (g.mode === 'pan') {
       manualCamera();
       stage.classList.add('panning');
       B.cam.x = g.cx + dx;
@@ -1985,6 +2018,7 @@ function bindInput() {
 
   function endGesture(cancel) {
     stage.classList.remove('panning');
+    $('boxsel')?.remove();
     if (!g) return;
     const cur = g;
     g = null;
@@ -1999,6 +2033,7 @@ function bindInput() {
       B.live.drag(moves.map((m) => [m.id, m.x, m.y, B.els.get(m.id).w, B.els.get(m.id).h]));
       B.live.hold([], null);
       const ids = [...cur.start.keys()];
+      if (!cancel) commit(new Map(ids.filter((id) => B.els.get(id)).map((id) => [id, { ...B.els.get(id), ...cur.start.get(id) }])));
       if (!cancel) {
         Promise.all(ids.map((id) => B.els.get(id)?._creating))
           .then(() => call('el_move', { p_moves: moves }))
@@ -2015,7 +2050,10 @@ function bindInput() {
       const r = B.els.get(cur.id);
       B.live.hold([], null);
       if (cancel) { r.w = cur.w0; r.h = cur.h0; renderEl(cur.id); B.myDrag.delete(cur.id); }
-      else patchEl(cur.id, { w: r.w, h: r.h }).finally(() => B.myDrag.delete(cur.id));
+      else {
+        commit(new Map([[cur.id, { ...r, w: cur.w0, h: cur.h0 }]]));
+        patchEl(cur.id, { w: r.w, h: r.h }).finally(() => B.myDrag.delete(cur.id));
+      }
     }
     placeSelTools();
   }
@@ -2059,6 +2097,11 @@ function bindInput() {
       return openFind();
     }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || !$('modal').hidden) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      e.preventDefault();
+      if (!canEdit() || B.past) return;
+      return e.key.toLowerCase() === 'y' || e.shiftKey ? redo() : undo();
+    }
     if (e.key === '/') { e.preventDefault(); openFind(); }
     else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       e.preventDefault();

@@ -1,10 +1,10 @@
 // Service worker: оболочка приложения открывается и без сети.
 // Сначала сеть, при неудаче копия из кэша. Запросы к серверу доски не трогаем.
-const CACHE = 'desk-v3';
+const CACHE = 'desk-v4';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/board.js', 'js/api.js', 'js/config.js', 'js/cork.js', 'js/extras.js', 'js/history.js',
-  'js/icons.js', 'js/live.js', 'js/merge.js', 'js/pwa.js', 'js/ui.js', 'js/clip.js', 'js/timer.js',
+  'js/icons.js', 'js/live.js', 'js/merge.js', 'js/pwa.js', 'js/ui.js', 'js/clip.js', 'js/timer.js', 'js/undo.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 // чужие адреса, которые можно держать в кэше: библиотека и шрифты

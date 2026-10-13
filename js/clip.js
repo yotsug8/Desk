@@ -82,6 +82,7 @@ async function place(rows, { dx, dy }) {
     made.forEach(A.applyRemote);
     const tied = await Promise.all(links.map(({ _z, ...args }) => A.call('el_create', args)));
     tied.forEach(A.applyRemote);
+    A.commit(new Map([...made, ...tied].map((r) => [r.id, null])));
     A.setSelection(made.map((r) => r.id));
   } catch (err) {
     toast(err.message, true);
@@ -111,6 +112,7 @@ async function pasteText(text) {
       p_board: B.id, p_type: type, p_x: Math.round(at.x - w / 2), p_y: Math.round(at.y - h / 2), p_w: w, p_h: h, p_data: data, p_id: A.uuid(),
     });
     A.applyRemote(saved);
+    A.commit(new Map([[saved.id, null]]));
     A.setSelection([saved.id]);
   } catch (err) { toast(err.message, true); }
 }

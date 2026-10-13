@@ -106,19 +106,6 @@ function mark() {
 const MAP_W = 176, MAP_H = 116;
 const mm = { box: null, cv: null, k: 1, ox: 0, oy: 0, queued: false };
 
-function mapOn() {
-  try { return localStorage.getItem('desk-minimap') !== '0'; } catch { return true; }
-}
-
-export function toggleMinimap() {
-  const on = !mapOn();
-  try { localStorage.setItem('desk-minimap', on ? '1' : '0'); } catch { /* приватный режим */ }
-  drawMinimap();
-  toast(on ? 'Мини-карта включена' : 'Мини-карта скрыта');
-}
-
-export const minimapOn = mapOn;
-
 function initMinimap() {
   const box = $('minimap');
   const cv = document.createElement('canvas');
@@ -158,7 +145,7 @@ export function drawMinimap() {
 function paintMinimap() {
   mm.queued = false;
   const list = rows().filter((r) => r.type !== 'link');
-  const show = mapOn() && list.length > 0;
+  const show = list.length > 0;
   mm.box.hidden = !show;
   if (!show) return;
 
