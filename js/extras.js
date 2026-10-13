@@ -266,7 +266,7 @@ async function toPNG() {
 
   // пробка
   const tile = new Image();
-  tile.src = getComputedStyle($('app')).backgroundImage.slice(5, -2);
+  tile.src = getComputedStyle($('cork')).backgroundImage.slice(5, -2);
   await tile.decode().catch(() => {});
   g.fillStyle = tile.width ? g.createPattern(tile, 'repeat') : '#b48a5e';
   g.fillRect(x1, y1, x2 - x1, y2 - y1);

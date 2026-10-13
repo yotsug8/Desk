@@ -45,3 +45,19 @@ export function corkOn(el, cam) {
   el.style.backgroundSize = `${s}px ${s}px`;
   el.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
 }
+
+// Пробка доски отдельным слоем: при движении меняется только translate, без перерисовки.
+// Слой больше экрана на одну плитку с каждой стороны и сдвигается по модулю плитки.
+export function corkLayer(el, cam) {
+  if (!el.style.backgroundImage) el.style.backgroundImage = tileURL();
+  const t = Math.max(0.5, cam.s) * 192;
+  const key = `${t}|${innerWidth}|${innerHeight}`;
+  if (el.dataset.key !== key) {
+    el.dataset.key = key;
+    el.style.backgroundSize = `${t}px ${t}px`;
+    el.style.width = innerWidth + 2 * t + 'px';
+    el.style.height = innerHeight + 2 * t + 'px';
+  }
+  const dx = (((cam.x % t) + t) % t) - t, dy = (((cam.y % t) + t) % t) - t;
+  el.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+}

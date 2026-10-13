@@ -103,7 +103,7 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .stage.panning { cursor: grabbing; }
 .stage.tool-note, .stage.tool-text, .stage.tool-list, .stage.tool-draw, .stage.tool-frame { cursor: crosshair; }
 .stage.tool-link { cursor: alias; }
-.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .strings { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 900000; }
 .strings path.s { fill: none; stroke-width: 2; stroke-linecap: round; }
 .strings path.sh { fill: none; stroke: #0000002a; stroke-width: 2; }
@@ -432,3 +432,15 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
 .boxsel { position: absolute; z-index: 18; pointer-events: none; border: 1.5px solid var(--acc); background: #c4553f1a; border-radius: 3px; }
 /* Планшет: угол с картой поднимаем над полкой, чтобы не наезжали */
 @media (min-width: 641px) and (max-width: 1100px) { .corner { bottom: calc(var(--bottom) + 80px); } }
+
+/* Пробка доски: отдельный слой, двигается на видеокарте */
+.corklayer { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; will-change: transform; background-color: var(--cork); }
+.stage { z-index: 1; }
+/* Чужое перетаскивание приходит раз в 40 мс: доезжает плавно, без рывков */
+.el.glide { transition: left 60ms linear, top 60ms linear, width 60ms linear, height 60ms linear; }
+/* Плавное появление доски и стартового экрана */
+.world { transition: opacity .25s ease-out; }
+.world.loading { opacity: 0; transition: none; }
+.gate .card { animation: cardIn .3s ease-out both; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(8px) rotate(-.4deg); } }
+@media (prefers-reduced-motion: reduce) { .gate .card { animation: none; } .world { transition: none; } }

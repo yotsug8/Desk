@@ -1,6 +1,6 @@
 // Service worker: оболочка приложения открывается и без сети.
 // Сначала сеть, при неудаче копия из кэша. Запросы к серверу доски не трогаем.
-const CACHE = 'desk-v12';
+const CACHE = 'desk-v13';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/board.js', 'js/api.js', 'js/config.js', 'js/cork.js', 'js/extras.js', 'js/history.js',

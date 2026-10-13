@@ -6,7 +6,7 @@ import { merge3, mapCaret } from './merge.js';
 import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
 import { initHistory } from './history.js';
-import { corkOn } from './cork.js';
+import { corkLayer } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
 import { initClip, duplicateSel } from './clip.js';
@@ -79,8 +79,11 @@ export async function startBoard(opts) {
   $('app').hidden = false;
   buildChrome();
 
+  // доска проявляется целиком, когда есть данные и шрифты: без прыжков текста и поштучного появления
+  $('world').classList.add('loading');
+  const fonts = Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 900))]);
   const [els, members, votes, requests] = await Promise.all([
-    select('elements', B.id), select('members', B.id), select('votes', B.id), select('requests', B.id),
+    select('elements', B.id), select('members', B.id), select('votes', B.id), select('requests', B.id), fonts,
   ]);
   B.requests = new Map(requests.filter((r) => r.status === 'pending').map((r) => [r.id, r]));
   for (const m of members) B.members.set(m.user_id, m);
@@ -89,6 +92,8 @@ export async function startBoard(opts) {
   fitCamera();
   renderAll();
   bindInput();
+  requestAnimationFrame(() => $('world').classList.remove('loading'));
+  // шрифты могли не успеть: тогда тихо пересчитать размеры надписей
   document.fonts?.ready.then(() => { renderAll(); for (const r of B.els.values()) if (r.type === 'text' && !r.deleted_at) syncTextBox(r.id, true); });
 
   B.live = connectLive(B, {
@@ -753,9 +758,14 @@ function applyCamera() {
   const { x, y, s } = B.cam;
   const pct = $('zoom').querySelector('.pct');
   if (pct) pct.textContent = Math.round(s * 100) + '%';
-  $('world').style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  const world = $('world');
+  world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
+  // слой на видеокарте только пока камера движется: в покое текст перерисуется чётким
+  world.style.willChange = 'transform';
+  clearTimeout(applyCamera.idle);
+  applyCamera.idle = setTimeout(() => { world.style.willChange = 'auto'; }, 250);
   $('world').style.setProperty('--inv', 1 / s);
-  corkOn($('app'), B.cam);
+  corkLayer($('cork'), B.cam);
   for (const c of cursors.values()) placeCursor(c);
   if (!$('seltools').hidden) placeSelTools();
   const c = toWorld(innerWidth / 2, innerHeight / 2);
@@ -992,7 +1002,7 @@ function queueReorder() {
 function reorder() {
   const layer = (id, n) => (n.classList.contains('frame') ? 0 : B.sel.has(id) ? 2 : 1);
   const list = [...B.nodes.entries()].sort((a, b) => layer(...a) - layer(...b) || Number(a[1].dataset.z) - Number(b[1].dataset.z));
-  list.forEach(([, n], i) => { n.style.zIndex = i + 1; });
+  list.forEach(([, n], i) => { if (n.style.zIndex !== String(i + 1)) n.style.zIndex = i + 1; });
 }
 
 // ---------- Нитки ----------
@@ -1201,6 +1211,12 @@ function onDrag(items) {
     const r = B.els.get(id);
     if (!r || B.myDrag.has(id)) continue;
     Object.assign(r, { x, y, w, h });
+    const n = B.nodes.get(id);
+    if (n) {
+      n.classList.add('glide');
+      clearTimeout(n._glide);
+      n._glide = setTimeout(() => n.classList.remove('glide'), 200);
+    }
     moveNode(id);
   }
 }
