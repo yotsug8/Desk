@@ -145,11 +145,11 @@ const TEMPLATES = {
   tips: {
     items: [
       T(-330, -330, 'Наша доска', 44),
-      N(-360, -200, 'yellow', 'Дважды нажми на меня, чтобы писать'),
-      N(-90, -170, 'pink', 'Тяни меня куда угодно. Доску двигай пустым местом или двумя пальцами'),
-      N(190, -210, 'green', 'Правый клик или долгое нажатие открывает меню: голос, связи, удаление'),
-      N(-300, 90, 'blue', 'Зови друзей кнопкой «Пригласить». Там же твоя ссылка владельца, сохрани её'),
-      N(80, 110, 'white', 'Ошибся или кто-то напортил? «История» сверху вернёт доску к любому моменту'),
+      N(-360, -200, 'yellow', 'Дважды нажми, чтобы писать'),
+      N(-90, -170, 'pink', 'Тяни заметку. Доску двигай пустым местом'),
+      N(190, -210, 'green', 'Правый клик или долгое нажатие: меню'),
+      N(-300, 90, 'blue', 'Зови друзей кнопкой «Пригласить»'),
+      N(80, 110, 'white', 'Ctrl+Z отменит, «История» вернёт любой момент'),
     ],
     links: [[1, 2], [2, 3], [4, 5]],
   },
@@ -157,14 +157,14 @@ const TEMPLATES = {
     items: [
       T(-520, -300, 'Надо сделать'), T(-150, -300, 'В работе'), T(220, -300, 'Готово'),
       N(-520, -220, 'yellow', 'Первая задача'), N(-520, -20, 'yellow', 'Вторая задача'),
-      N(-150, -220, 'blue', 'Перетащи сюда то, чем занят'), N(220, -220, 'green', 'А сюда готовое'),
+      N(-150, -220, 'blue', 'То, чем занят'), N(220, -220, 'green', 'Готовое'),
     ],
   },
   retro: {
     items: [
       T(-520, -300, 'Что было хорошо'), T(-150, -300, 'Что мешало'), T(220, -300, 'Что попробуем'),
       N(-520, -220, 'green', ''), N(-150, -220, 'pink', ''), N(220, -220, 'blue', ''),
-      N(-150, 20, 'white', 'Голосуйте за важное через меню заметки', 210, 120),
+      N(-150, 20, 'white', 'Голосуйте за важное', 210, 120),
     ],
   },
   trip: {
@@ -266,7 +266,7 @@ async function trashDialog() {
   const when = (iso) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const { root, close } = openModal(`
     <h3>Корзина</h3>
-    <p>Снятое лежит здесь 30 дней, его можно вернуть на доску.</p>
+    <p>Удалённое за 30 дней.</p>
     <div class="trash">${list.length ? list.map((r) => `
       <div class="tr" data-id="${r.id}">
         <span class="k">${kinds[r.type] || 'Элемент'}</span>
@@ -283,7 +283,7 @@ async function trashDialog() {
     try {
       await call('el_restore', { p_ids: [row.dataset.id] });
       row.remove();
-      toast('Возвращено на доску');
+      toast('Возвращено');
     } catch (err) { toast(err.message, true); }
   };
 }
@@ -385,7 +385,7 @@ function setTool(t) {
   if (t !== 'link') cancelLink();
   for (const b of $('ledge').children) b.classList.toggle('on', !!t && b.dataset.tool === t);
   $('stage').className = 'stage' + (t ? ' tool-' + t : '');
-  if (t === 'link') toast('Нажмите на первый элемент, потом на второй');
+  if (t === 'link') toast('Выберите два элемента');
   buildPens();
 }
 
@@ -548,7 +548,7 @@ const newbieLeft = () => (isOwner() ? 0 : Math.max(0, Math.ceil((new Date(B.me.j
 // Можно ли трогать элемент: свой, или владелец, или не закреплён и не новичок
 function mayTouch(r) {
   if (!r || isOwner() || r.created_by === B.me.user_id) return true;
-  if (r.locked) { toast('Элемент закреплён: менять его могут автор и владелец'); return false; }
+  if (r.locked) { toast('Элемент закреплён'); return false; }
   if (newbieLeft()) { toast(`Новичкам первые 5 минут можно только добавлять своё, осталось ${newbieLeft()} мин`); return false; }
   return true;
 }
@@ -581,11 +581,10 @@ function inviteDialog() {
   const owner = B.opts.ownerLink();
   const { root, close } = openModal(`
     <h3>Пригласить на доску</h3>
-    <p>Все, у кого есть ссылка, смогут войти и работать с доской вместе с вами.</p>
     <div class="copyrow"><input class="field" readonly value="${esc(B.opts.inviteLink)}"><button class="minibtn" data-copy="0">Копировать</button></div>
     ${owner ? `
       <h3 style="margin-top:16px">Ссылка владельца</h3>
-      <p class="note-small">Сохраните её для себя и никому не отправляйте: по ней вы вернёте права владельца с другого устройства или после очистки браузера.</p>
+      <p class="note-small">Только для вас: возвращает права владельца.</p>
       <div class="copyrow"><input class="field" readonly value="${esc(owner)}"><button class="minibtn" data-copy="1">Копировать</button></div>` : ''}
     <div class="row"><button class="minibtn go" data-close>Готово</button></div>`);
   root.onclick = (e) => {
@@ -697,7 +696,7 @@ function summon() {
   const c = toWorld(innerWidth / 2, innerHeight / 2);
   B.live.summon(c.x, c.y, B.cam.s);
   ripple(c.x, c.y, memberColor(B.me.user_id));
-  toast('Позвали всех сюда');
+  toast('Все позваны');
 }
 
 function ripple(x, y, color) {
@@ -1354,9 +1353,8 @@ function nudge([dx, dy]) {
 function askApproval(kind, payload, n) {
   const { root, close } = openModal(`
     <h3>Нужно одобрение</h3>
-    <p>За минуту можно ${kind === 'delete' ? 'удалить' : 'сдвинуть'} не больше 10 чужих элементов. Это защита от порчи доски.
-      Можно отправить действие на одобрение: его увидят все участники, и владелец или другой участник разрешит.</p>
-    <div class="row"><button class="minibtn" data-close>Отмена</button><button class="minibtn go" data-send>Отправить на одобрение</button></div>`);
+    <p>Больше 10 чужих элементов за минуту ${kind === 'delete' ? 'удаляются' : 'двигаются'} только с одобрения участников.</p>
+    <div class="row"><button class="minibtn" data-close>Отмена</button><button class="minibtn go" data-send>Запросить</button></div>`);
   root.querySelector('[data-close]').onclick = close;
   root.querySelector('[data-send]').onclick = async () => {
     close();

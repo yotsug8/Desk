@@ -83,7 +83,7 @@ export function initHistory(B, d) {
         <h3>История<span class="sp2"></span>
           ${groups.length > 1 ? `<button type="button" data-play title="Проиграть историю" aria-label="Проиграть">${icon(playing ? 'stop' : 'play', true)}</button>` : ''}
           <button type="button" data-close aria-label="Закрыть">${icon('close', true)}</button></h3>
-        <p>Выберите момент, чтобы увидеть доску в прошлом${canRoll ? ' и вернуть её' : ''}</p>
+        <p>Выберите момент</p>
         ${groups.length > 1 ? `<div class="row"><input class="slider" type="range" min="0" max="${groups.length - 1}" value="${groups.length - 1 - pick}" aria-label="Момент в истории"></div>` : ''}
       </div>
       <div class="hist-list">${groups.length ? groups.map((g, i) => `

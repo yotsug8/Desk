@@ -188,7 +188,6 @@ function colorOf(r) {
 export function exportDialog() {
   const { root, close } = A.openModal(`
     <h3>Скачать доску</h3>
-    <p>Файл сохранится на вашем устройстве.</p>
     <div class="choices">
       <button class="choice" data-x="png">${icon('image', true)}<span><b>Картинкой</b><small>вся доска в PNG</small></span></button>
       <button class="choice" data-x="md">${icon('note', true)}<span><b>Текстом</b><small>заметки и списки в Markdown</small></span></button>

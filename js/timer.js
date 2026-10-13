@@ -27,7 +27,7 @@ export function onTimerAsk() {
 export function timerDialog() {
   const { root, close } = A.openModal(`
     <h3>Таймер</h3>
-    <p>Таймер увидят все, кто сейчас на доске. Когда время выйдет, прозвучит сигнал.</p>
+    <p>Виден всем на доске.</p>
     <div class="mins">${[1, 3, 5, 10, 15, 25].map((m) => `<button class="minibtn" data-m="${m}">${m} мин</button>`).join('')}</div>
     <div class="row">
       ${end ? '<button class="minibtn danger" data-stop>Остановить</button>' : ''}

@@ -14,7 +14,7 @@ addEventListener('beforeinstallprompt', (e) => {
 
 addEventListener('appinstalled', () => {
   prompt = null;
-  toast('Доска установлена как приложение');
+  toast('Установлено');
 });
 
 const standalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;

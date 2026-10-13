@@ -28,7 +28,7 @@ export async function copyText(text) {
     await navigator.clipboard.writeText(text);
     toast('Ссылка скопирована');
   } catch {
-    toast('Не удалось скопировать, выделите и скопируйте вручную', true);
+    toast('Не удалось скопировать', true);
   }
 }
 

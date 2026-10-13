@@ -63,7 +63,7 @@ const TEMPLATES = [
 function landing() {
   const recent = store.get('boards', []);
   const root = showGate(`${HEAD}
-    <p class="lead">Общая доска по ссылке: заметки, списки, рисунки и фото. Любое изменение можно отменить.</p>
+    <p class="lead">Общая доска по ссылке.</p>
     <form id="f">
       <label for="name">Ваше имя</label>
       <input id="name" class="field" maxlength="40" autocomplete="nickname" required>
@@ -117,7 +117,7 @@ async function enter(id, opts) {
 
   let info = await rpc('board_info', { p_board: id });
   if (!info) {
-    showGate(`${HEAD}<p class="lead">Доска не найдена. Проверьте ссылку.</p><a class="bigbtn" style="display:block;text-align:center;text-decoration:none" href="./">Создать новую</a>`);
+    showGate(`${HEAD}<p class="lead">Доска не найдена.</p><a class="bigbtn" style="display:block;text-align:center;text-decoration:none" href="./">Создать новую</a>`);
     return;
   }
 
@@ -130,7 +130,7 @@ async function enter(id, opts) {
       store.set('owner-' + id, secret);
       toast('Вы снова владелец доски');
     } else {
-      toast('Ссылка владельца устарела или неверна', true);
+      toast('Ссылка владельца неверна', true);
     }
     info = await rpc('board_info', { p_board: id });
   }
@@ -189,7 +189,7 @@ async function enter(id, opts) {
 
 async function route(opts = {}) {
   if (!sb) {
-    showGate(`${HEAD}<p class="lead">Сервер ещё не подключён. Загляните чуть позже.</p>`);
+    showGate(`${HEAD}<p class="lead">Сервер недоступен.</p>`);
     return;
   }
   const id = new URLSearchParams(location.search).get('b');
@@ -199,7 +199,7 @@ async function route(opts = {}) {
   } catch (err) {
     if (!navigator.onLine) {
       // без сети доску не открыть: ждём связь и пробуем сами
-      showGate(`${HEAD}<p class="lead">Нет интернета. Доска откроется сама, как только связь вернётся.</p>`);
+      showGate(`${HEAD}<p class="lead">Нет интернета. Доска откроется, когда связь вернётся.</p>`);
       addEventListener('online', () => location.reload(), { once: true });
       return;
     }
