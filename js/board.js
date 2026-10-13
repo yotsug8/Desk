@@ -119,6 +119,8 @@ export async function startBoard(opts) {
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
   initUndo(B, {
     call, applyRemote, resync,
+    // дождаться, пока уйдут все начатые сохранения: отмена должна видеть итог на сервере
+    idle: async () => { for (let i = 0; i < 100 && B.pending > 0; i++) await new Promise((r) => setTimeout(r, 50)); },
     refetch: async (ids) => {
       const { data } = await sb.from('elements').select('*').in('id', ids);
       (data || []).forEach(applyRemote);
@@ -201,6 +203,7 @@ async function seedBoard(name) {
 
 function buildChrome() {
   $('boardTitle').textContent = B.title;
+  document.title = `${B.title} · Доска`;
   $('titleLabel').classList.toggle('can', isOwner());
   $('titleLabel').onclick = () => isOwner() && renameDialog();
   $('btnInvite').innerHTML = `${icon('link', true)}<span class="lbl">Пригласить</span>`;
@@ -613,6 +616,7 @@ function renameDialog() {
 function setTitle(t) {
   B.title = t;
   $('boardTitle').textContent = t;
+  document.title = `${t} · Доска`;
   B.opts.onTitle(t);
 }
 
@@ -1229,6 +1233,8 @@ async function createEl(type, wx, wy) {
   B.els.set(id, row);
   B.sel = new Set([id]);
   renderEl(id);
+  // запись об отмене сразу, до ответа сервера: иначе правка текста встанет раньше создания
+  commit(new Map([[id, null]]));
   row._creating = call('el_create', {
     p_board: B.id, p_type: type, p_x: row.x, p_y: row.y, p_w: w, p_h: h, p_data: row.data, p_id: id,
   }).then((saved) => {
@@ -1238,7 +1244,6 @@ async function createEl(type, wx, wy) {
       B.els.set(id, { ...saved, data: { ...saved.data, text: cur.data.text } });
     }
     if (B.editing?.id === id && B.editing.version < saved.version) B.editing.version = saved.version;
-    commit(new Map([[id, null]]));
   }).catch((err) => {
     toast(err.message, true);
     B.els.delete(id);
@@ -1261,9 +1266,9 @@ async function deleteSel(quiet) {
   B.sel.clear();
   placeSelTools();
   queueStrings();
+  commit(before);
   try {
     await call('el_delete', { p_ids: ids });
-    commit(before);
     if (!quiet) undoChip(ids);
   } catch (err) {
     resync();

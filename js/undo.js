@@ -61,6 +61,7 @@ async function step(from, to, side, msg) {
   const entry = from.pop();
   if (!entry) { toast(side === 'before' ? 'Нечего отменять' : 'Нечего повторять'); return; }
   try {
+    await A.idle();
     await apply(entry[side]);
     to.push(entry);
     toast(msg);
@@ -72,6 +73,8 @@ async function step(from, to, side, msg) {
 
 // Привести элементы к нужному состоянию минимальными вызовами
 async function apply(target) {
+  // элементы, которые ещё создаются, сначала должны появиться на сервере
+  await Promise.all([...target.keys()].map((id) => B.els.get(id)?._creating));
   const del = [], res = [], upd = [];
   for (const [id, want] of target) {
     const cur = B.els.get(id);
