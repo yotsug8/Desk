@@ -31,6 +31,7 @@ test('Ctrl+Z отменяет создание, перенос, цвет, тек
 
   // текст
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(450); // два касания подряд открыли бы правку сразу
   await notes(page).first().click();
   await page.keyboard.press('Enter');
   await page.keyboard.type(' два');
