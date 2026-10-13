@@ -47,7 +47,7 @@ function showGate(html) {
   return gate.querySelector('.card');
 }
 
-const HEAD = `<h1><svg viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="96" fill="#2a2420"/><rect x="96" y="96" width="320" height="320" rx="18" fill="#b48a5e"/><g transform="rotate(-4 220 230)"><rect x="140" y="150" width="170" height="150" rx="4" fill="#f1e2a4"/></g><g transform="rotate(5 330 330)"><rect x="262" y="262" width="122" height="112" rx="4" fill="#c9dbe8"/></g><path d="M226 160C270 240 290 250 322 268" stroke="#c4553f" stroke-width="10" fill="none"/><circle cx="226" cy="158" r="18" fill="#c4553f"/><circle cx="322" cy="270" r="18" fill="#c4553f"/></svg>Доска</h1>`;
+const HEAD = `<h1><svg viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#b9472f"/><g transform="rotate(-7 256 280)"><path d="M112 136h288v200l-72 72H112z" fill="#f7efd9"/><path d="M400 336h-56a16 16 0 0 0-16 16v56z" fill="#d9caa5"/><g fill="#2a2420"><path d="M176 196h134v24H176z"/><path d="M270 196h38v150h-38z"/><path d="M200 220h36l-16 126h-44c14-30 22-76 24-126z"/><path d="M150 344h182v28H150z"/><path d="M150 372h26v34l-26-6zM306 372h26v28l-26 6z"/></g></g><circle cx="252" cy="128" r="40" fill="#2a2420"/><circle cx="240" cy="115" r="11" fill="#fff" opacity=".45"/></svg>Доска</h1>`;
 
 // Заготовки новой доски: значение, название, пояснение
 const TEMPLATES = [
