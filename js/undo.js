@@ -5,7 +5,6 @@ import { toast } from './ui.js';
 let B, A;
 const done = [], undone = [];
 const LIMIT = 100;
-let running = false;
 window.__deskUndo = { done, undone }; // для тестов
 
 export function initUndo(board, api) {
@@ -22,7 +21,8 @@ export function snap(ids) {
 
 // Записать действие: before собран до него, after берётся из текущего состояния
 export function commit(before) {
-  if (running || !before?.size) return;
+  // отмена сама ничего не записывает: она зовёт сервер напрямую, а не через действия доски
+  if (!before?.size) return;
   const after = new Map([...before.keys()].map((id) => [id, copy(B.els.get(id))]));
   const same = [...before].every(([id, b]) => sameRow(b, after.get(id)));
   if (same) return;
@@ -60,7 +60,6 @@ export const redo = () => (chain = chain.then(() => step(undone, done, 'after', 
 async function step(from, to, side, msg) {
   const entry = from.pop();
   if (!entry) { toast(side === 'before' ? 'Нечего отменять' : 'Нечего повторять'); return; }
-  running = true;
   try {
     await apply(entry[side]);
     to.push(entry);
@@ -68,8 +67,6 @@ async function step(from, to, side, msg) {
   } catch (err) {
     toast(err.message, true);
     A.resync();
-  } finally {
-    running = false;
   }
 }
 
