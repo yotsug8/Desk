@@ -37,7 +37,10 @@ export function connectLive(B, h) {
         track();
         sendHold();
         send('tq', {}); // идёт ли у кого-то таймер
+        // после переподключения сверяемся сразу; после первого входа чуть позже:
+        // сервер начинает слать изменения не мгновенно, и то, что случилось в эти секунды, иначе теряется
         if (everJoined) h.onResync();
+        else setTimeout(() => h.onResync(true), 1500);
         everJoined = true;
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         joined = false;

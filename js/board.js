@@ -1291,12 +1291,13 @@ function onDrag(items) {
 }
 
 // После переподключения подтянуть всё, что могли пропустить
-async function resync() {
+// soft: только то, что новее нашего; свои несохранённые сдвиги не трогаем
+async function resync(soft) {
   try {
     const [els, members, votes] = await Promise.all([
       select('elements', B.id), select('members', B.id), select('votes', B.id),
     ]);
-    for (const e of els) applyRemote(e, true);
+    for (const e of els) applyRemote(e, !soft);
     for (const m of members) onMember(m);
     for (const v of votes) setVote(v);
     renderVotesAll();
