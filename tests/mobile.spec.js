@@ -101,3 +101,18 @@ test('при открытой клавиатуре палец двигает д�
   expect(await page.evaluate(() => { const r = document.querySelector('.el.list'); return [r.style.left, r.style.top]; })).toEqual(listBox0);
   await ctx.close();
 });
+test('клавиатура ужимает окно: верхняя панель не сдвигается', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.bigbtn');
+  await page.locator('.topbar').waitFor();
+  await page.waitForTimeout(800);
+  const pos = () => page.evaluate(() => ['.topbar', '#btnHistory', '#btnInvite'].map((q) => { const r = document.querySelector(q).getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top)]; }));
+  const a = await pos();
+  await page.setViewportSize({ width: 390, height: 420 }); // как будто клавиатура ужала окно
+  await page.waitForTimeout(300);
+  const b = await pos();
+  expect(b).toEqual(a);
+});

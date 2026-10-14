@@ -324,8 +324,9 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
   .tool span { display: none; }
   .tool { padding: 6px 0; }
 }
-/* Телефон боком: всё ниже и плотнее */
-@media (max-height: 500px) {
+/* Телефон боком: всё ниже и плотнее. Только широкий экран: телефон с открытой клавиатурой
+   тоже невысокий, но отступы у него меняться не должны, иначе верхняя панель прыгает */
+@media (max-height: 500px) and (min-width: 641px) {
   :root { --edge: 6px; }
   .tool span { display: none; }
   .tool .art { width: 34px; height: 27px; }
