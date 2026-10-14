@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-test('масштаб не меняется при добавлении и при открытой клавиатуре', async ({ browser }) => {
+test('масштаб не меняется при добавлении, два пальца при открытой клавиатуре ничего не двигают', async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const page = await ctx.newPage();
   await page.goto('/');
@@ -19,11 +19,20 @@ test('масштаб не меняется при добавлении и при
   // щипок двумя пальцами во время набора
   const cdp = await ctx.newCDPSession(page);
   const tp = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
+  const cam = () => page.evaluate(() => document.querySelector('.world').style.transform);
+  const c0 = await cam();
   await tp('touchStart', [[150, 400], [250, 400]]);
   for (let i = 1; i <= 5; i++) await tp('touchMove', [[150 - i * 15, 400], [250 + i * 15, 400]]);
   await tp('touchEnd', []);
   await page.waitForTimeout(300);
   expect(await pct()).toBe(s0);
+  // два пальца в одну сторону: доска стоит на месте, правка открыта
+  await tp('touchStart', [[150, 400], [250, 400]]);
+  for (let i = 1; i <= 5; i++) await tp('touchMove', [[150, 400 + i * 20], [250, 400 + i * 20]]);
+  await tp('touchEnd', []);
+  await page.waitForTimeout(300);
+  expect(await cam()).toBe(c0);
+  await expect(page.locator('body.editing')).toHaveCount(1);
   await ctx.close();
 });
 test('касание пустой доски пальцем закрывает правку', async ({ browser }) => {

@@ -2017,6 +2017,12 @@ function bindInput() {
     if (B.editing && e.target.tagName !== 'TEXTAREA') e.preventDefault();
   }, { passive: false });
 
+  // все пальцы на экране, включая тот, что в тексте: стадия о нём сама не знает
+  const fingers = new Set();
+  addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') fingers.add(e.pointerId); }, true);
+  for (const t of ['pointerup', 'pointercancel']) addEventListener(t, (e) => fingers.delete(e.pointerId), true);
+  const twoFingersInEdit = () => B.editing && fingers.size > 1;
+
   let editEnd = false; // касание пальцем при открытой правке: закрыть её, если это не щипок
   stage.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
@@ -2026,6 +2032,13 @@ function bindInput() {
     stage.setPointerCapture(e.pointerId);
     clearTimeout(longPress);
 
+    if (e.pointerType === 'touch' && twoFingersInEdit()) {
+      // при открытой клавиатуре два пальца ничего не делают: ни сдвига, ни масштаба,
+      // иначе доска уезжает рывком, а выделение текста тянется следом
+      editEnd = false;
+      g = { mode: 'idle' };
+      return;
+    }
     if (pts.size === 2) {
       editEnd = false;
       // два пальца: масштаб и сдвиг; начатое перетаскивание откатываем к началу
@@ -2164,6 +2177,8 @@ function bindInput() {
       return;
     }
     if (g.mode === 'erase') { eraseAt(e); return; }
+    if (g.mode !== 'idle' && e.pointerType === 'touch' && twoFingersInEdit()) { editEnd = false; g = { mode: 'idle' }; }
+    if (g.mode === 'idle') return;
 
     if (g.mode === 'pinch' && pts.size >= 2) {
       const [a, b] = [...pts.values()];
