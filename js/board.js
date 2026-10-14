@@ -2436,8 +2436,9 @@ function bindInput() {
   const pinTop = () => document.documentElement.style.setProperty('--vvt', Math.max(0, Math.round(visualViewport.offsetTop)) + 'px');
   window.visualViewport?.addEventListener('scroll', pinTop);
   window.visualViewport?.addEventListener('resize', pinTop);
-  // после клавиатуры iOS иногда оставляет страницу прокрученной: возвращаем на место
-  addEventListener('scroll', () => { if (!B.editing && (scrollX || scrollY)) scrollTo(0, 0); }, { passive: true });
+  // при клавиатуре iOS прокручивает страницу, и верхняя панель уезжает: сразу возвращаем на место
+  // и во время набора тоже: текст над клавиатурой держит сама доска (keepInView), а не прокрутка страницы
+  addEventListener('scroll', () => { if (scrollX || scrollY) scrollTo(0, 0); }, { passive: true });
   window.visualViewport?.addEventListener('resize', () => {
     if (!coarse()) return placeSelTools();
     document.body.classList.add('vv-moving');
