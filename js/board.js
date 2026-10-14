@@ -803,7 +803,11 @@ function toWorld(sx, sy) {
   return { x: (sx - B.cam.x) / B.cam.s, y: (sy - B.cam.y) / B.cam.s };
 }
 
+// Пока на телефоне открыта клавиатура, масштаб не меняется: иначе текст и курсор прыгают
+const zoomLocked = () => !!B.editing && matchMedia('(pointer: coarse)').matches;
+
 function zoomAt(sx, sy, k) {
+  if (zoomLocked()) return;
   const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, B.cam.s * k));
   const w = toWorld(sx, sy);
   B.cam = { s, x: sx - w.x * s, y: sy - w.y * s };
@@ -814,6 +818,7 @@ function zoomAt(sx, sy, k) {
 let flight = 0;
 function flyTo(x, y, s, ms) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) ms = 1;
+  if (zoomLocked()) s = B.cam.s;
   s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const from = { ...B.cam };
   const to = { s, x: innerWidth / 2 - x * s, y: innerHeight / 2 - y * s };
@@ -1395,7 +1400,7 @@ function withContents(ids) {
 }
 
 // Правка на телефоне: клавиатура съедает низ экрана, сдвигаем доску так,
-// чтобы элемент был виден над ней и в читаемом размере
+// чтобы элемент был виден над ней; масштаб не трогаем
 function keepInView(id) {
   const fix = () => {
     const node = B.nodes.get(id);
@@ -1404,14 +1409,11 @@ function keepInView(id) {
     const vh = vv ? vv.height : innerHeight, vt = vv ? vv.offsetTop : 0;
     // меряем то, где идёт набор: подпись фото и области, а не весь элемент
     const r = (node.querySelector('.edit-host') || node).getBoundingClientRect();
-    const small = innerWidth < 640;
-    const s = small && B.cam.s < 0.9 ? 1 : B.cam.s;
-    const k = s / B.cam.s;
-    const w = r.width * k, h = r.height * k;
+    const s = B.cam.s, w = r.width, h = r.height;
     // куда поставить элемент: под верхней строкой, по центру по горизонтали, если не влезает
     const wantTop = vt + 64;
     const fits = r.top >= vt + 56 && r.top + Math.min(h, 160) <= vt + vh - 12 && r.left >= 4 && r.right <= innerWidth - 4;
-    if (fits && k === 1) return;
+    if (fits) return;
     const wx = (r.left - B.cam.x) / B.cam.s, wy = (r.top - B.cam.y) / B.cam.s;
     const sx = w < innerWidth - 16 ? (innerWidth - w) / 2 : 8;
     manualCamera();
@@ -1994,6 +1996,13 @@ function bindInput() {
     openCtx(e.clientX, e.clientY, targetOf(e));
   });
 
+  // при открытой клавиатуре касание доски не должно само забирать фокус у текста:
+  // правку закрывает обработчик касаний, а сдвиг и щипок её сохраняют
+  stage.addEventListener('touchstart', (e) => {
+    if (B.editing && e.target.tagName !== 'TEXTAREA') e.preventDefault();
+  }, { passive: false });
+
+  let editEnd = false; // касание пальцем при открытой правке: закрыть её, если это не щипок
   stage.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
     if (e.target.tagName === 'TEXTAREA') return;
@@ -2003,6 +2012,7 @@ function bindInput() {
     clearTimeout(longPress);
 
     if (pts.size === 2) {
+      editEnd = false;
       // два пальца: масштаб и сдвиг; начатое перетаскивание откатываем к началу
       if (g?.mode === 'drag' || g?.mode === 'resize') endGesture(true);
       if (g?.mode === 'stroke') drawTemp(null);
@@ -2018,6 +2028,8 @@ function bindInput() {
     const id = t?.kind === 'el' ? t.id : null;
     const w = toWorld(e.clientX, e.clientY);
     const panBtn = e.button === 1 || B.past;
+    // палец при открытой клавиатуре: правку закрываем, только когда ясно, что это не щипок
+    editEnd = e.pointerType === 'touch' && !!B.editing && B.editing.id !== id;
 
     // долгое нажатие пальцем открывает круговое меню
     if (e.pointerType !== 'mouse' && !B.past && B.tool !== 'draw') {
@@ -2057,7 +2069,7 @@ function bindInput() {
       return;
     }
 
-    if (B.editing && B.editing.id !== id) finishEdit();
+    if (B.editing && B.editing.id !== id && e.pointerType !== 'touch') finishEdit();
 
     // голосование: тык в элемент втыкает кнопку, тык в свою кнопку вынимает
     const vb = e.target.closest('[data-vote]');
@@ -2145,6 +2157,7 @@ function bindInput() {
 
     const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
     if (!g.moved && Math.hypot(dx, dy) < 6) return;
+    if (editEnd) { editEnd = false; finishEdit(); }
     g.moved = true;
     clearTimeout(longPress);
 
@@ -2215,6 +2228,7 @@ function bindInput() {
       return;
     }
     if (pts.size) return;
+    if (editEnd) { editEnd = false; finishEdit(); }
     if (g?.mode === 'stroke') {
       const raw = g.pts;
       g = null;
