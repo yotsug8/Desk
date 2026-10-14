@@ -1,7 +1,7 @@
 // Service worker: оболочка приложения открывается и без сети.
-// Свои файлы: сеть без HTTP-кэша (свежая версия сразу после выкладки), при сбое или долгом ответе копия из кэша.
+// Свои файлы: сеть без HTTP-кэша (свежая версия сразу после выкладки), при сбое, ошибке или долгом ответе копия из кэша.
 // Библиотека и шрифты с версией в адресе: сразу из кэша. Запросы к серверу доски не трогаем.
-const CACHE = 'desk-v19';
+const CACHE = 'desk-v20';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/board.js', 'js/api.js', 'js/config.js', 'js/cork.js', 'js/extras.js', 'js/history.js',
@@ -52,7 +52,8 @@ async function fresh(req) {
   });
   const timeout = new Promise((r) => setTimeout(r, TIMEOUT));
   const first = await Promise.race([net.catch(() => null), timeout]);
-  if (first) return first;
+  if (first?.ok) return first;
+  // сеть ответила ошибкой (502 и т. п.) или молчит: лучше прошлая копия, чем пустой экран
   const hit = await cache.match(key, { ignoreSearch: req.mode === 'navigate' });
-  return hit || net;
+  return hit || first || net;
 }

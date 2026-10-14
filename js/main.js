@@ -5,6 +5,10 @@ import { startBoard } from './board.js';
 import { corkOn } from './cork.js';
 import './pwa.js';
 
+// все модули загрузились: сторож загрузки в index.html больше не нужен
+window.__deskBooted = true;
+try { sessionStorage.removeItem('desk-reboot'); } catch { /* приватный режим */ }
+
 const gate = document.getElementById('gate');
 const PEOPLE_COLORS = ['#e4572e', '#2a9d8f', '#7b61ff', '#d17a00', '#c2185b', '#1e88e5', '#43a047', '#6d4c41'];
 

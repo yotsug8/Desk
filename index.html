@@ -90,6 +90,29 @@
   <div id="modal" class="modal" hidden></div>
   <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
+  <script>
+    // Сбой сети при загрузке скриптов не должен оставлять вечную крутилку:
+    // один раз тихо перезагружаем, потом показываем кнопку «Обновить»
+    (function () {
+      var done = false;
+      function fail() {
+        if (done || window.__deskBooted) return;
+        done = true;
+        var again = false;
+        try { again = !sessionStorage.getItem('desk-reboot'); sessionStorage.setItem('desk-reboot', '1'); } catch (e) {}
+        if (again) { location.reload(); return; }
+        var gate = document.getElementById('gate');
+        gate.hidden = false;
+        gate.innerHTML = '<div class="card loading-card"><p>Не удалось загрузить доску. Проверьте интернет.</p><button class="bigbtn" type="button">Обновить</button></div>';
+        gate.querySelector('button').onclick = function () { location.reload(); };
+      }
+      addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && (t.tagName === 'SCRIPT' || (t.tagName === 'LINK' && t.rel === 'modulepreload'))) fail();
+      }, true);
+      setTimeout(fail, 15000);
+    })();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" crossorigin="anonymous" defer></script>
   <script type="module" src="js/main.js"></script>
 </body>
