@@ -28,7 +28,8 @@
   --sans: 'Golos Text', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --serif: 'PT Serif', Georgia, serif;
   --edge: 12px;
-  --top: calc(var(--edge) + env(safe-area-inset-top, 0px));
+  /* --vvt: на сколько браузер сдвинул видимую часть экрана (клавиатура); верх интерфейса едет следом и стоит на месте */
+  --top: calc(var(--edge) + env(safe-area-inset-top, 0px) + var(--vvt, 0px));
   --bottom: calc(var(--edge) + env(safe-area-inset-bottom, 0px));
   --btn: 40px;
 }

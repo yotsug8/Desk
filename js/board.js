@@ -2432,6 +2432,10 @@ function bindInput() {
   // клавиатура выезжает и уезжает: панели прячем на время движения и возвращаем на место,
   // когда экран успокоился, чтобы они не скакали за каждым шагом анимации
   let vvTimer = 0;
+  // браузер сдвигает видимую часть экрана при клавиатуре: верхние панели держим у её края
+  const pinTop = () => document.documentElement.style.setProperty('--vvt', Math.max(0, Math.round(visualViewport.offsetTop)) + 'px');
+  window.visualViewport?.addEventListener('scroll', pinTop);
+  window.visualViewport?.addEventListener('resize', pinTop);
   // после клавиатуры iOS иногда оставляет страницу прокрученной: возвращаем на место
   addEventListener('scroll', () => { if (!B.editing && (scrollX || scrollY)) scrollTo(0, 0); }, { passive: true });
   window.visualViewport?.addEventListener('resize', () => {
