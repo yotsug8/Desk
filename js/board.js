@@ -1401,7 +1401,7 @@ function withContents(ids) {
 
 // Правка на телефоне: клавиатура съедает низ экрана, сдвигаем доску так,
 // чтобы элемент был виден над ней; масштаб не трогаем
-function keepInView(id) {
+function keepInView(id, now) {
   const fix = () => {
     const node = B.nodes.get(id);
     if (!node || B.editing?.id !== id) return;
@@ -1412,15 +1412,20 @@ function keepInView(id) {
     const s = B.cam.s, w = r.width, h = r.height;
     // куда поставить элемент: под верхней строкой, по центру по горизонтали, если не влезает
     const wantTop = vt + 64;
-    const fits = r.top >= vt + 56 && r.top + Math.min(h, 160) <= vt + vh - 12 && r.left >= 4 && r.right <= innerWidth - 4;
+    const fits = now
+      // во время набора двигаем, только если текст совсем ушёл из кадра
+      ? r.bottom > vt + 80 && r.top < vt + vh - 30 && r.right > 30 && r.left < innerWidth - 30
+      : r.top >= vt + 56 && r.top + Math.min(h, 160) <= vt + vh - 12 && r.left >= 4 && r.right <= innerWidth - 4;
     if (fits) return;
     const wx = (r.left - B.cam.x) / B.cam.s, wy = (r.top - B.cam.y) / B.cam.s;
     const sx = w < innerWidth - 16 ? (innerWidth - w) / 2 : 8;
     manualCamera();
     B.cam = { s, x: sx - wx * s, y: wantTop - wy * s };
     applyCamera();
+    if (now) flushCamera();
   };
   fix();
+  if (now) return;
   // клавиатура выезжает не сразу
   if (matchMedia('(pointer: coarse)').matches) setTimeout(fix, 350);
 }
@@ -1609,6 +1614,9 @@ function startEdit(id) {
   sizeTextEl(ed);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
+  // доску увели, а человек печатает: сами возвращаем текст в кадр до того,
+  // как браузер начнёт прокручивать страницу к курсору
+  if (matchMedia('(pointer: coarse)').matches) ta.addEventListener('beforeinput', () => keepInView(id, true));
   ta.addEventListener('input', () => {
     sizeTextEl(ed);
     clearTimeout(ed.timer);
@@ -2028,8 +2036,14 @@ function bindInput() {
     const id = t?.kind === 'el' ? t.id : null;
     const w = toWorld(e.clientX, e.clientY);
     const panBtn = e.button === 1 || B.past;
-    // палец при открытой клавиатуре: правку закрываем, только когда ясно, что это не щипок
+    // палец при открытой клавиатуре: любое движение только двигает доску, клавиатура остаётся;
+    // простое касание мимо правки закрывает её на отпускании
     editEnd = e.pointerType === 'touch' && !!B.editing && B.editing.id !== id;
+    if (e.pointerType === 'touch' && B.editing) {
+      clearTimeout(longPress);
+      g = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: B.cam.x, cy: B.cam.y, moved: false, empty: editEnd };
+      return;
+    }
 
     // долгое нажатие пальцем открывает круговое меню
     if (e.pointerType !== 'mouse' && !B.past && B.tool !== 'draw') {
@@ -2157,7 +2171,7 @@ function bindInput() {
 
     const dx = e.clientX - g.sx, dy = e.clientY - g.sy;
     if (!g.moved && Math.hypot(dx, dy) < 6) return;
-    if (editEnd) { editEnd = false; finishEdit(); }
+    editEnd = false; // это сдвиг, а не касание: правку не закрываем
     g.moved = true;
     clearTimeout(longPress);
 
