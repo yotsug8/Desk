@@ -160,7 +160,14 @@ export function initHistory(B, d) {
     $('btnHistory').classList.add('on');
     if (!loaded) {
       panel.innerHTML = '<div class="hist-empty">Загружаю...</div>';
-      const fresh = await select('history', B.id, { order: 'id', desc: true, limit: LIMIT });
+      let fresh;
+      try {
+        fresh = await select('history', B.id, { order: 'id', desc: true, limit: LIMIT });
+      } catch {
+        panel.innerHTML = '<div class="hist-empty">Не удалось загрузить. <button class="minibtn" type="button" data-retry>Повторить</button></div>';
+        panel.querySelector('[data-retry]').onclick = open;
+        return;
+      }
       // записи, пришедшие вживую во время загрузки, не теряем
       const byId = new Map(fresh.map((r) => [r.id, r]));
       for (const r of rows) byId.set(r.id, r);
@@ -184,12 +191,16 @@ export function initHistory(B, d) {
   // Новая или обновлённая (склеенная) запись истории
   function onRow(r) {
     if (r.action === 'rename' && r.after?.title) d.setTitle(r.after.title);
+    // панель ни разу не открывали: при открытии всё равно загрузим свежее
+    if (!loaded && panel.hidden) return;
     const i = rows.findIndex((x) => x.id === r.id);
     if (i >= 0) rows[i] = r;
+    else if (!rows.length || r.id > rows[0].id) rows.unshift(r);
     else {
-      rows.unshift(r);
+      rows.push(r);
       rows.sort((a, b) => b.id - a.id);
     }
+    if (rows.length > LIMIT * 2) rows.length = LIMIT * 2;
     if (panel.hidden) return;
     const pickedId = pick ? groups[pick]?.id : null;
     regroup();

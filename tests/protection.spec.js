@@ -14,7 +14,7 @@ test('новичок первые минуты только добавляет �
   // через интерфейс
   await notes(b).first().click();
   await b.keyboard.press('Delete');
-  await expect(b.locator('.toast').last()).toContainText('Новичкам');
+  await expect(b.locator('.toast').last()).toContainText('Первые 5 минут');
   await expect(notes(a)).toHaveCount(1);
 
   // в обход интерфейса
@@ -128,4 +128,35 @@ test('владелец: только просмотр для новых, выг�
   // выгнать Мишу: его выкидывает с доски
   await a.locator('.mr', { hasText: 'Миша' }).locator('[data-a=ban]').click();
   await expect(b.locator('#gate')).toContainText('закрыл вам доступ');
+});
+
+test('сервер: возврат из корзины и правка чужого под теми же лимитами', async ({ browser }) => {
+  const a = await (await browser.newContext()).newPage();
+  const b = await (await browser.newContext()).newPage();
+  const url = await createBoard(a, 'Аня');
+  // у Ани 12 заметок, одна уже в корзине
+  const ids = await a.evaluate(async () => {
+    const sb = window.__deskApi.sb, out = [];
+    for (let i = 0; i < 12; i++) {
+      const { data } = await sb.rpc('el_create', { p_board: window.__desk.id, p_type: 'note', p_x: i * 30, p_y: 0, p_w: 200, p_h: 170, p_data: { text: 'n' + i, color: 'yellow' } });
+      out.push(data.id);
+    }
+    await sb.rpc('el_delete', { p_ids: [out[0]] });
+    return out;
+  });
+
+  // новичок не возвращает чужое из корзины
+  await joinBoard(b, url, 'Новичок', { trusted: false });
+  const fresh = await b.evaluate(async (id) => (await window.__deskApi.sb.rpc('el_restore', { p_ids: [id] })).error?.message, ids[0]);
+  expect(fresh).toBe('too_new');
+
+  // освоившийся участник правит чужое, но не больше 10 разных элементов в минуту
+  await ageMember(b);
+  const res = await b.evaluate(async (list) => {
+    const sb = window.__deskApi.sb, out = [];
+    for (const id of list) out.push((await sb.rpc('el_update', { p_id: id, p_base_version: 1, p_patch: { x: 999 } })).error?.message || 'ok');
+    return out;
+  }, ids.slice(1));
+  expect(res.slice(0, 10)).toEqual(Array(10).fill('ok'));
+  expect(res[10]).toBe('mass_limit');
 });

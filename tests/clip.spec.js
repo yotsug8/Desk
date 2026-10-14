@@ -70,6 +70,6 @@ test('доска из заготовки «Задачи»', async ({ page }) => 
   await page.click('.tpl:has([value=kanban])');
   await page.click('.bigbtn');
   await expect(page.locator('.el.text')).toHaveCount(3);
-  await expect(page.locator('.el.text').nth(1)).toHaveText('В работе');
+  await expect(page.locator('.el.text', { hasText: 'В работе' })).toHaveCount(1);
   await expect(notes(page)).toHaveCount(4);
 });

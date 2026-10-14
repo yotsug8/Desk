@@ -22,13 +22,15 @@ export function snap(ids) {
 // Записать действие: before собран до него, after берётся из текущего состояния
 export function commit(before) {
   // отмена сама ничего не записывает: она зовёт сервер напрямую, а не через действия доски
-  if (!before?.size) return;
+  if (!before?.size) return null;
   const after = new Map([...before.keys()].map((id) => [id, copy(B.els.get(id))]));
   const same = [...before].every(([id, b]) => sameRow(b, after.get(id)));
-  if (same) return;
-  done.push({ before, after });
+  if (same) return null;
+  const entry = { before, after };
+  done.push(entry);
   if (done.length > LIMIT) done.shift();
   undone.length = 0;
+  return entry;
 }
 
 // Правка текста сразу после создания не нужна отдельной записью: отмена всё равно уберёт элемент
@@ -51,6 +53,8 @@ const sameRow = (a, b) => {
 };
 
 export const canUndo = () => done.length > 0;
+// эта запись всё ещё последняя (для кнопки «вернуть» после удаления)
+export const isTop = (entry) => !!entry && done[done.length - 1] === entry;
 
 // Нажатия подряд встают в очередь, ни одно не теряется
 let chain = Promise.resolve();
@@ -62,7 +66,7 @@ async function step(from, to, side, msg) {
   if (!entry) { toast(side === 'before' ? 'Нечего отменять' : 'Нечего повторять'); return; }
   try {
     await A.idle();
-    await apply(entry[side]);
+    await apply(entry[side], entry[side === 'before' ? 'after' : 'before']);
     to.push(entry);
     toast(msg);
   } catch (err) {
@@ -72,7 +76,7 @@ async function step(from, to, side, msg) {
 }
 
 // Привести элементы к нужному состоянию минимальными вызовами
-async function apply(target) {
+async function apply(target, other) {
   // элементы, которые ещё создаются, сначала должны появиться на сервере
   await Promise.all([...target.keys()].map((id) => B.els.get(id)?._creating));
   const del = [], res = [], upd = [];
@@ -91,12 +95,28 @@ async function apply(target) {
   }
   for (const [id, want] of upd) {
     const cur = B.els.get(id);
-    const patch = { x: want.x, y: want.y, w: want.w, h: want.h, data: want.data };
-    A.local(id, patch);
+    // возвращаем только то, что меняло само действие: чужие правки того же элемента не трогаем
+    const was = other.get(id);
+    const patch = {};
+    for (const k of ['x', 'y', 'w', 'h']) if (!was || was[k] !== want[k]) patch[k] = want[k];
+    const keys = new Set([...Object.keys(want.data || {}), ...Object.keys(was?.data || {})]);
+    const data = {};
+    for (const k of keys) if (!was || JSON.stringify(was.data?.[k]) !== JSON.stringify(want.data?.[k])) data[k] = want.data?.[k];
+    if (Object.keys(data).length) patch.data = data;
+    if (!Object.keys(patch).length) continue;
+    A.local(id, { ...patch, data: { ...cur.data, ...(patch.data || {}) } });
     let r = await A.call('el_update', { p_id: id, p_base_version: cur.version, p_patch: patch });
-    // версия успела смениться (эхо прошлых правок ещё в пути): повторяем от свежей
-    if (r && !r.ok) r = await A.call('el_update', { p_id: id, p_base_version: r.element.version, p_patch: patch });
-    if (r?.element) A.applyRemote(r.element);
+    if (r && !r.ok) {
+      // текст успели поменять другие: его не трогаем, остальное возвращаем
+      if ((r.element.data?.text || '') === (was?.data?.text || '')) {
+        r = await A.call('el_update', { p_id: id, p_base_version: r.element.version, p_patch: patch });
+      } else {
+        delete patch.data.text;
+        if (!Object.keys(patch.data).length) delete patch.data;
+        if (Object.keys(patch).length) r = await A.call('el_update', { p_id: id, p_base_version: r.element.version, p_patch: patch });
+      }
+    }
+    if (r?.element) A.applyRemote(r.element, true);
   }
   if (del.length) {
     for (const id of del) A.local(id, { deleted_at: new Date().toISOString() });

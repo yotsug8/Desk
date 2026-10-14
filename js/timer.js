@@ -54,6 +54,7 @@ function stop(share) {
 
 function run(left, t, who) {
   end = Date.now() + left;
+  $('timer').classList.remove('done');
   total = t || left;
   by = who || '';
   clearInterval(tick);

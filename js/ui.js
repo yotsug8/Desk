@@ -5,6 +5,7 @@ const modal = document.getElementById('modal');
 export function toast(text, bad = false) {
   const el = document.createElement('div');
   el.className = 'toast' + (bad ? ' bad' : '');
+  if (bad) el.setAttribute('role', 'alert');
   el.textContent = text;
   toasts.append(el);
   setTimeout(() => el.remove(), bad ? 5000 : 2500);
@@ -15,12 +16,36 @@ export function esc(s) {
 }
 
 // Открыть окно с готовой разметкой. Возвращает корневую карточку и функцию закрытия.
+// Escape закрывает, Tab ходит только внутри окна, после закрытия фокус возвращается.
 export function openModal(html) {
-  modal.innerHTML = `<div class="card" role="dialog">${html}</div>`;
+  const prev = document.activeElement;
+  modal.innerHTML = `<div class="card" role="dialog" aria-modal="true" tabindex="-1">${html}</div>`;
   modal.hidden = false;
-  const close = () => { modal.hidden = true; modal.innerHTML = ''; };
+  const root = modal.firstElementChild;
+  const h = root.querySelector('h3');
+  if (h) { h.id = 'modal-title'; root.setAttribute('aria-labelledby', 'modal-title'); }
+  const close = () => {
+    modal.hidden = true;
+    modal.innerHTML = '';
+    modal.onkeydown = null;
+    if (prev?.isConnected) prev.focus({ preventScroll: true });
+  };
   modal.onclick = (e) => { if (e.target === modal) close(); };
-  return { root: modal.firstElementChild, close };
+  modal.onkeydown = (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...root.querySelectorAll('button, input, select, textarea, a[href]')].filter((x) => !x.disabled && x.offsetParent);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  // фокус в окно: на поле ввода, если есть, иначе на само окно (без случайного нажатия кнопки)
+  requestAnimationFrame(() => {
+    const field = root.querySelector('input:not([readonly]), textarea');
+    (field || root).focus({ preventScroll: true });
+  });
+  return { root, close };
 }
 
 export async function copyText(text) {

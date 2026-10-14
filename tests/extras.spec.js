@@ -12,7 +12,7 @@ test('поиск подсвечивает совпадения и переход
   await page.keyboard.type('палат');
   await expect(page.locator('#find .cnt')).toHaveText('1 из 2');
   await expect(page.locator('.el.found')).toHaveCount(2);
-  await expect(page.locator('.el.cur')).toHaveCount(1);
+  await expect(page.locator('.el.found-cur')).toHaveCount(1);
   await page.keyboard.press('Enter');
   await expect(page.locator('#find .cnt')).toHaveText('2 из 2');
 

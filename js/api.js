@@ -4,7 +4,7 @@ import { SERVER } from './config.js';
 export const sb = SERVER.url
   ? window.supabase.createClient(SERVER.url, SERVER.key, {
       auth: { persistSession: true, autoRefreshToken: true, storageKey: 'desk-auth' },
-      realtime: { params: { eventsPerSecond: 30 } },
+      realtime: { params: { eventsPerSecond: 60 } },
     })
   : null;
 
@@ -23,6 +23,7 @@ const MESSAGES = {
   mass_limit: 'Нужно одобрение',
   too_many_requests: 'Уже 3 запроса ждут одобрения',
   bad_link: 'Связать можно два разных элемента',
+  rate_limit: 'Слишком быстро, подождите минуту',
 };
 
 export class ApiError extends Error {}

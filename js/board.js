@@ -10,7 +10,7 @@ import { corkLayer } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
 import { initClip, duplicateSel } from './clip.js';
-import { initUndo, snap, commit, justCreated, refreshTop, undo, redo, canUndo } from './undo.js';
+import { initUndo, snap, commit, justCreated, refreshTop, undo, redo, canUndo, isTop } from './undo.js';
 import { initTimer, onTimer, onTimerAsk, timerDialog } from './timer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -65,12 +65,14 @@ export async function startBoard(opts) {
     editing: null,
     holds: new Map(),      // id элемента -> { u, name, color, mode } от других людей
     myDrag: new Set(),     // что я сейчас тащу: чужие координаты для них не применяем
+    lifting: new Set(),    // что поднято пальцем или мышью прямо сейчас (тень)
     past: null,            // снимок прошлого при просмотре истории
     pending: 0,
     online: null,          // null: ещё подключаемся
     linkFrom: null,        // откуда тянется нитка
     round: null,           // текущий раунд голосования
-    votes: new Map(),      // id -> кнопка голосования
+    votes: new Map(),      // id голоса -> голос
+    votesBy: new Map(),    // id элемента -> id его голосов
     follow: null,          // за кем слежу
     people: [],            // кто в сети
   };
@@ -81,20 +83,22 @@ export async function startBoard(opts) {
 
   // доска проявляется целиком, когда есть данные и шрифты: без прыжков текста и поштучного появления
   $('world').classList.add('loading');
-  const fonts = Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 900))]);
+  const fonts = Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 1500))]);
   const [els, members, votes, requests] = await Promise.all([
     select('elements', B.id), select('members', B.id), select('votes', B.id), select('requests', B.id), fonts,
   ]);
   B.requests = new Map(requests.filter((r) => r.status === 'pending').map((r) => [r.id, r]));
   for (const m of members) B.members.set(m.user_id, m);
   for (const e of els) B.els.set(e.id, e);
-  for (const v of votes) B.votes.set(v.id, v);
+  for (const v of votes) setVote(v);
   fitCamera();
   renderAll();
   bindInput();
   requestAnimationFrame(() => $('world').classList.remove('loading'));
-  // шрифты могли не успеть: тогда тихо пересчитать размеры надписей
-  document.fonts?.ready.then(() => { renderAll(); for (const r of B.els.values()) if (r.type === 'text' && !r.deleted_at) syncTextBox(r.id, true); });
+  // шрифты не успели: когда загрузятся, тихо пересчитать размеры надписей
+  if (document.fonts && document.fonts.status !== 'loaded') {
+    document.fonts.ready.then(() => { for (const r of B.els.values()) if (r.type === 'text' && !r.deleted_at) syncTextBox(r.id, true); queueStrings(); });
+  }
 
   B.live = connectLive(B, {
     onElement: applyRemote,
@@ -106,8 +110,8 @@ export async function startBoard(opts) {
     onCursor: drawCursor,
     onViewport,
     onSummon,
-    onKick: () => location.reload(),
-    onVote: (v) => { B.votes.set(v.id, v); renderVotes(v.element_id); },
+    onKick: async () => { try { const i = await rpc('board_info', { p_board: B.id }); if (!i?.me || i.me.banned) location.reload(); } catch { /* проверим позже */ } },
+    onVote: (v) => { setVote(v); renderVotes(v.element_id); },
     onRequest: (r) => {
       if (r.status === 'pending') B.requests.set(r.id, r);
       else {
@@ -138,7 +142,7 @@ export async function startBoard(opts) {
   B.loaded = true;
   renderRequests();
   setInterval(updateStatus, 30000);
-  if (opts.fresh && TEMPLATES[opts.template] && canEdit()) seedBoard(opts.template).then(() => opts.template !== 'tips' && inviteDialog());
+  if (opts.fresh && TEMPLATES[opts.template] && canEdit()) seedBoard(opts.template);
   else if (opts.fresh) inviteDialog();
 }
 
@@ -186,22 +190,15 @@ const TEMPLATES = {
 async function seedBoard(name) {
   const tpl = TEMPLATES[name];
   if (!tpl) return;
-  const ids = [];
-  for (const it of tpl.items) {
-    try {
-      const saved = await call('el_create', { p_board: B.id, p_type: it.type, p_x: it.x, p_y: it.y, p_w: it.w, p_h: it.h, p_data: it.data, p_id: uuid() });
-      applyRemote(saved);
-      ids.push(saved.id);
-      await new Promise((r) => setTimeout(r, 120));
-    } catch (err) { toast(err.message, true); return; }
-  }
-  for (const [a, b] of tpl.links || []) {
-    try {
-      const saved = await call('el_create', { p_board: B.id, p_type: 'link', p_x: 0, p_y: 0, p_w: 20, p_h: 20, p_data: { from: ids[a], to: ids[b], color: 'red' }, p_id: uuid() });
-      applyRemote(saved);
-    } catch { /* без нитки тоже можно */ }
-  }
-  fitCamera(true);
+  const rows = tpl.items.map((it) => ({ ...it, id: uuid() }));
+  try {
+    const made = await Promise.all(rows.map((it) => call('el_create', { p_board: B.id, p_type: it.type, p_x: it.x, p_y: it.y, p_w: it.w, p_h: it.h, p_data: it.data, p_id: it.id })));
+    made.forEach((r) => applyRemote(r));
+  } catch (err) { toast(err.message, true); return; }
+  await Promise.all((tpl.links || []).map(([a, b]) => call('el_create', {
+    p_board: B.id, p_type: 'link', p_x: 0, p_y: 0, p_w: 20, p_h: 20, p_data: { from: rows[a].id, to: rows[b].id, color: 'red' }, p_id: uuid(),
+  }).then((r) => applyRemote(r)).catch(() => { /* без нитки тоже можно */ })));
+  requestAnimationFrame(() => fitCamera());
 }
 
 // ---------- Верхняя строка, меню доски, панель инструментов ----------
@@ -506,8 +503,9 @@ async function addPhoto(file, at) {
     const blob = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.82));
     const src = `${B.id}/${uuid()}.jpg`;
     B.pending++; updateStatus();
-    const up = await sb.storage.from('images').upload(src, blob, { contentType: 'image/jpeg', upsert: false });
-    B.pending--; updateStatus();
+    let up;
+    try { up = await sb.storage.from('images').upload(src, blob, { contentType: 'image/jpeg', upsert: false }); }
+    finally { B.pending--; updateStatus(); }
     if (up.error) throw new Error('Не удалось загрузить фото');
     const w = 260, h = Math.round(260 * cv.height / cv.width) + 64;
     const saved = await call('el_create', {
@@ -551,11 +549,14 @@ const isOwner = () => B.me.role === 'owner';
 // Новичок: первые 5 минут на доске можно только добавлять своё
 const newbieLeft = () => (isOwner() ? 0 : Math.max(0, Math.ceil((new Date(B.me.joined_at).getTime() + 5 * 60e3 - Date.now()) / 60e3)));
 // Можно ли трогать элемент: свой, или владелец, или не закреплён и не новичок
+function canTouch(r) {
+  return !r || isOwner() || r.created_by === B.me.user_id || (!r.locked && !newbieLeft());
+}
 function mayTouch(r) {
-  if (!r || isOwner() || r.created_by === B.me.user_id) return true;
-  if (r.locked) { toast('Элемент закреплён'); return false; }
-  if (newbieLeft()) { toast(`Новичкам первые 5 минут можно только добавлять своё, осталось ${newbieLeft()} мин`); return false; }
-  return true;
+  if (canTouch(r)) return true;
+  if (r.locked) toast('Элемент закреплён');
+  else toast(`Первые 5 минут можно только добавлять, осталось ${newbieLeft()} мин`);
+  return false;
 }
 const canEdit = () => ['owner', 'editor'].includes(B.me.role) && !B.past;
 
@@ -630,6 +631,7 @@ function memberName(uid) { return B.members.get(uid)?.name ?? 'Гость'; }
 function memberColor(uid) { return B.members.get(uid)?.color ?? '#7a6a55'; }
 
 function onMember(m) {
+  const prev = B.members.get(m.user_id);
   B.members.set(m.user_id, m);
   if (m.user_id === B.me.user_id) {
     const was = B.me.role;
@@ -637,6 +639,7 @@ function onMember(m) {
     if (m.banned) location.reload();
     if (was !== m.role) { buildLedge(); updateStatus(); }
   }
+  if (prev && prev.name === m.name && prev.color === m.color) return;
   for (const [id, row] of B.els) if (row.created_by === m.user_id) renderEl(id);
 }
 
@@ -655,10 +658,14 @@ function onPresence(people) {
 }
 
 function renderPeople(popped = new Set()) {
-  $('people').innerHTML = B.people.map((p, i) => `
-    <button class="av${B.follow === p.u ? ' on' : ''}${popped.has(p.u) ? ' arrive' : ''}" data-u="${esc(p.u)}" style="--c:${esc(p.c)}"
-      title="${esc(p.n)}: смотреть доску глазами участника">${esc((p.n || '?')[0].toUpperCase())}</button>`).join('');
+  const max = innerWidth < 640 ? 2 : 5;
+  const shown = B.people.slice(0, max), more = B.people.length - shown.length;
+  $('people').innerHTML = shown.map((p) => `
+    <button class="av${B.follow === p.u ? ' on' : ''}${popped.has(p.u) ? ' arrive' : ''}" data-u="${esc(p.u)}" style="--c:${/^#[0-9a-f]{6}$/i.test(p.c) ? p.c : '#7a6a55'}"
+      title="${esc(p.n)}: смотреть доску глазами участника" aria-label="${esc(p.n)}">${esc((p.n || '?')[0].toUpperCase())}</button>`).join('')
+    + (more > 0 ? `<button class="av more" type="button" data-more title="Все участники">+${more}</button>` : '');
   $('people').onclick = (e) => {
+    if (e.target.closest('[data-more]')) return peopleDialog();
     const b = e.target.closest('[data-u]');
     if (!b) return;
     B.follow === b.dataset.u ? stopFollow() : startFollow(b.dataset.u);
@@ -754,18 +761,37 @@ function buildZoom() {
   };
 }
 
+// Камера: события только запоминают положение, рисуем раз за кадр
+let camQueued = false;
 function applyCamera() {
+  if (camQueued) return;
+  camQueued = true;
+  requestAnimationFrame(flushCamera);
+}
+
+let lastScale = 0, sharpTimer = 0, camIdle = 0;
+function flushCamera() {
+  camQueued = false;
   const { x, y, s } = B.cam;
-  const pct = $('zoom').querySelector('.pct');
-  if (pct) pct.textContent = Math.round(s * 100) + '%';
   const world = $('world');
   world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
-  // слой на видеокарте только пока камера движется: в покое текст перерисуется чётким
-  world.style.willChange = 'transform';
-  clearTimeout(applyCamera.idle);
-  applyCamera.idle = setTimeout(() => { world.style.willChange = 'auto'; }, 250);
-  $('world').style.setProperty('--inv', 1 / s);
+  if (s !== lastScale) {
+    lastScale = s;
+    world.style.setProperty('--inv', 1 / s);
+    const pct = $('zoom').querySelector('.pct');
+    if (pct) pct.textContent = Math.round(s * 100) + '%';
+    // после смены масштаба один раз перерисовать слой, чтобы текст снова стал чётким
+    clearTimeout(sharpTimer);
+    sharpTimer = setTimeout(() => {
+      world.style.willChange = 'auto';
+      requestAnimationFrame(() => { world.style.willChange = ''; });
+    }, 300);
+  }
   corkLayer($('cork'), B.cam);
+  // курсоры гостей едут вместе с доской без запаздывания
+  $('cursors').classList.add('cam');
+  clearTimeout(camIdle);
+  camIdle = setTimeout(() => $('cursors').classList.remove('cam'), 150);
   for (const c of cursors.values()) placeCursor(c);
   if (!$('seltools').hidden) placeSelTools();
   const c = toWorld(innerWidth / 2, innerHeight / 2);
@@ -787,6 +813,7 @@ function zoomAt(sx, sy, k) {
 // Плавный перелёт: точка (x, y) мира в центр экрана с масштабом s
 let flight = 0;
 function flyTo(x, y, s, ms) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) ms = 1;
   s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s));
   const from = { ...B.cam };
   const to = { s, x: innerWidth / 2 - x * s, y: innerHeight / 2 - y * s };
@@ -797,7 +824,7 @@ function flyTo(x, y, s, ms) {
     const k = Math.min(1, (t - t0) / ms);
     const e = 1 - Math.pow(1 - k, 3);
     B.cam = { s: from.s + (to.s - from.s) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
-    applyCamera();
+    flushCamera();
     if (k < 1) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -847,7 +874,15 @@ function renderEl(id) {
       }
     }
     if (!v && B.sel.delete(id)) placeSelTools();
-    if (!v && B.editing?.id === id) { B.editing.ta.blur(); B.editing = null; }
+    if (!v && B.editing?.id === id) {
+      const ed = B.editing;
+      clearTimeout(ed.timer);
+      ed.dead = true;
+      B.editing = null;
+      document.body.classList.remove('editing');
+      B.live.hold([], null);
+      ed.ta.remove();
+    }
     if (!v && B.linkFrom === id) cancelLink();
     return;
   }
@@ -867,7 +902,7 @@ function renderEl(id) {
   const t = v.type;
   const sel = B.sel.has(id);
   const color = v.data.color || DEFAULT_COLOR[t] || 'ink';
-  const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.myDrag.has(id) ? ' lift' : '');
+  const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.lifting.has(id) ? ' lift' : '');
   node.className = `el ${t} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
   if (t !== 'draw' && t !== 'frame') node.style.setProperty('--rot', tilt(id) + 'deg');
   node.style.left = v.x + 'px';
@@ -908,7 +943,7 @@ function renderEl(id) {
     body.dataset.ph = PLACEHOLDER[t] || '';
     if (!editing) {
       if (t === 'list') renderList(body, v.data.text || '');
-      else body.textContent = v.data.text || '';
+      else if (body.textContent !== (v.data.text || '')) body.textContent = v.data.text || '';
     }
   }
 
@@ -956,6 +991,8 @@ const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись
 
 // Список: строки «[ ] дело» и «[x] дело» становятся галочками, остальные заголовками
 function renderList(body, text) {
+  if (body._text === text) return;
+  body._text = text;
   body.innerHTML = text.split('\n').map((line, i) => {
     const m = line.match(/^\[( |x)\] ?(.*)$/);
     if (!m) return line.trim() ? `<div class="lh">${esc(line)}</div>` : '';
@@ -1105,7 +1142,16 @@ function renderStrings() {
 }
 
 // Линия мелка, пока её ведут: рисуем в слое ниток, без сохранения
+let tempPts = null, tempQueued = false;
 function drawTemp(pts) {
+  tempPts = pts;
+  if (!pts) return drawTempNow(null);
+  if (tempQueued) return;
+  tempQueued = true;
+  requestAnimationFrame(() => { tempQueued = false; if (tempPts) drawTempNow(tempPts); });
+}
+
+function drawTempNow(pts) {
   const svg = $('strings');
   let p = svg.querySelector('.temp-ink');
   if (!pts) { p?.remove(); return; }
@@ -1158,7 +1204,13 @@ async function finishLink(to) {
 // ---------- Голосование ----------
 // Один голос человека на элемент: «Голос» в меню элемента или нажатие на счётчик
 
-const votesOf = (id) => [...B.votes.values()].filter((v) => v.element_id === id && v.round === 0 && !v.removed);
+const votesOf = (id) => [...(B.votesBy.get(id) || [])].map((vid) => B.votes.get(vid)).filter((v) => v && v.round === 0 && !v.removed);
+function setVote(v) {
+  B.votes.set(v.id, v);
+  let set = B.votesBy.get(v.element_id);
+  if (!set) B.votesBy.set(v.element_id, (set = new Set()));
+  set.add(v.id);
+}
 
 function renderVotes(id) {
   const node = B.nodes.get(id);
@@ -1171,7 +1223,7 @@ function renderVotes(id) {
   box.dataset.vote = id;
   box.classList.toggle('mine', mine);
   box.title = list.map((v) => memberName(v.user_id)).join(', ');
-  box.innerHTML = `${icon('thumb', true)}<b>${list.length}</b>`;
+  if (box.dataset.n !== String(list.length)) { box.dataset.n = list.length; box.innerHTML = `${icon('thumb', true)}<b>${list.length}</b>`; }
 }
 
 function renderVotesAll() {
@@ -1195,14 +1247,26 @@ async function voteToggle(id) {
 
 // ---------- Изменения с сервера ----------
 
-function applyRemote(row) {
+const remoteQueue = new Set();
+let remoteQueued = false;
+function applyRemote(row, force) {
   const cur = B.els.get(row.id);
-  if (cur && cur.version > row.version) return;
+  // эхо своих же изменений и опоздавшие старые версии не трогают экран
+  if (cur && (force ? cur.version > row.version : cur.version >= row.version)) return;
   if (cur && B.myDrag.has(row.id)) { row = { ...row, x: cur.x, y: cur.y, w: cur.w, h: cur.h }; }
   B.els.set(row.id, row);
   if (B.editing?.id === row.id) mergeIntoEditor(row);
-  if (!B.past) renderEl(row.id);
-  placeSelTools();
+  if (B.past) return;
+  remoteQueue.add(row.id);
+  if (!remoteQueued) {
+    remoteQueued = true;
+    requestAnimationFrame(() => {
+      remoteQueued = false;
+      for (const id of remoteQueue) renderEl(id);
+      remoteQueue.clear();
+      placeSelTools();
+    });
+  }
 }
 
 function onDrag(items) {
@@ -1227,9 +1291,9 @@ async function resync() {
     const [els, members, votes] = await Promise.all([
       select('elements', B.id), select('members', B.id), select('votes', B.id),
     ]);
-    for (const e of els) applyRemote(e);
+    for (const e of els) applyRemote(e, true);
     for (const m of members) onMember(m);
-    for (const v of votes) B.votes.set(v.id, v);
+    for (const v of votes) setVote(v);
     renderVotesAll();
   } catch { /* повторим при следующем подключении */ }
 }
@@ -1237,10 +1301,16 @@ async function resync() {
 // Кто-то взял или отпустил элементы
 function onHold({ u, ids, m }) {
   if (u === B.me.user_id) return;
-  const changed = new Set(ids);
-  for (const [id, hd] of B.holds) if (hd.u === u) { B.holds.delete(id); changed.add(id); }
+  const changed = new Set();
+  const now = new Set(ids);
+  for (const [id, hd] of B.holds) if (hd.u === u && !now.has(id)) { B.holds.delete(id); changed.add(id); }
   const who = B.members.get(u);
-  for (const id of ids) B.holds.set(id, { u, name: who?.name || 'Гость', color: who?.color || '#7a6a55', mode: m });
+  for (const id of ids) {
+    const old = B.holds.get(id);
+    if (old && old.u === u && old.mode === m) continue;
+    B.holds.set(id, { u, name: who?.name || 'Гость', color: who?.color || '#7a6a55', mode: m });
+    changed.add(id);
+  }
   for (const id of changed) renderEl(id);
 }
 
@@ -1258,7 +1328,7 @@ async function createEl(type, wx, wy) {
     version: 0, locked: false, created_by: B.me.user_id, updated_by: B.me.user_id, deleted_at: null,
   };
   B.els.set(id, row);
-  B.sel = new Set([id]);
+  setSelection([id]);
   renderEl(id);
   // запись об отмене сразу, до ответа сервера: иначе правка текста встанет раньше создания
   commit(new Map([[id, null]]));
@@ -1268,7 +1338,7 @@ async function createEl(type, wx, wy) {
     const cur = B.els.get(id);
     if (cur && cur.version < saved.version) {
       // текст мог уже поменяться локально, его досохранит редактор
-      B.els.set(id, { ...saved, data: { ...saved.data, text: cur.data.text } });
+      B.els.set(id, { ...saved, x: cur.x, y: cur.y, z: cur.z, deleted_at: cur.deleted_at, data: { ...saved.data, text: cur.data.text } });
     }
     if (B.editing?.id === id && B.editing.version < saved.version) B.editing.version = saved.version;
   }).catch((err) => {
@@ -1283,7 +1353,10 @@ async function createEl(type, wx, wy) {
 async function deleteSel(quiet) {
   const ids = [...B.sel];
   if (!ids.length || !canEdit()) return;
-  if (!ids.every((id) => mayTouch(B.els.get(id)))) return;
+  const bad = ids.find((id) => !canTouch(B.els.get(id)));
+  if (bad) { mayTouch(B.els.get(bad)); return; }
+  // удаляемое сейчас правится: его текст уже не нужен, сохранять не будем
+  if (B.editing && ids.includes(B.editing.id)) { B.editing.dead = true; clearTimeout(B.editing.timer); }
   finishEdit();
   const before = snap(ids);
   for (const id of ids) {
@@ -1293,10 +1366,11 @@ async function deleteSel(quiet) {
   B.sel.clear();
   placeSelTools();
   queueStrings();
-  commit(before);
+  const entry = commit(before);
   try {
+    await Promise.all(ids.map((id) => B.els.get(id)?._creating));
     await call('el_delete', { p_ids: ids });
-    if (!quiet) undoChip(ids);
+    if (!quiet) undoChip(ids, entry);
   } catch (err) {
     resync();
     if (err.code === 'mass_limit') askApproval('delete', ids, ids.length);
@@ -1311,7 +1385,7 @@ function withContents(ids) {
     const f = B.els.get(id);
     if (f?.type !== 'frame' || f.deleted_at) continue;
     for (const r of B.els.values()) {
-      if (r.deleted_at || r.type === 'link' || r.type === 'frame' || out.has(r.id) || !mayTouch(r)) continue;
+      if (r.deleted_at || r.type === 'link' || r.type === 'frame' || out.has(r.id) || !canTouch(r)) continue;
       const n = B.nodes.get(r.id);
       const cx = r.x + (n?.offsetWidth || r.w) / 2, cy = r.y + (n?.offsetHeight || r.h) / 2;
       if (cx > f.x && cx < f.x + f.w && cy > f.y && cy < f.y + f.h) out.add(r.id);
@@ -1328,7 +1402,8 @@ function keepInView(id) {
     if (!node || B.editing?.id !== id) return;
     const vv = window.visualViewport;
     const vh = vv ? vv.height : innerHeight, vt = vv ? vv.offsetTop : 0;
-    const r = node.getBoundingClientRect();
+    // меряем то, где идёт набор: подпись фото и области, а не весь элемент
+    const r = (node.querySelector('.edit-host') || node).getBoundingClientRect();
     const small = innerWidth < 640;
     const s = small && B.cam.s < 0.9 ? 1 : B.cam.s;
     const k = s / B.cam.s;
@@ -1350,11 +1425,17 @@ function keepInView(id) {
 
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
 let nudgeTimer = 0, nudgeFrom = null;
+// Сдвиг стрелками: копим всё сдвинутое (даже если выделение сменилось) и сохраняем пачкой
+const nudged = new Set();
 function nudge([dx, dy]) {
-  const rows = [...withContents(B.sel)].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link' && mayTouch(r));
+  const all = [...withContents(B.sel)].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link');
+  const rows = all.filter(canTouch);
+  if (rows.length < all.length) mayTouch(all.find((r) => !canTouch(r)));
   if (!rows.length) return;
-  if (!nudgeFrom) nudgeFrom = snap(rows.map((r) => r.id));
+  if (!nudgeFrom) nudgeFrom = new Map();
   for (const r of rows) {
+    if (!nudgeFrom.has(r.id)) nudgeFrom.set(r.id, { ...r, data: { ...r.data } });
+    nudged.add(r.id);
     r.x += dx;
     r.y += dy;
     B.myDrag.add(r.id);
@@ -1362,20 +1443,28 @@ function nudge([dx, dy]) {
   }
   placeSelTools();
   clearTimeout(nudgeTimer);
-  nudgeTimer = setTimeout(() => {
-    commit(nudgeFrom);
-    nudgeFrom = null;
-    raiseLocal(rows.map((r) => r.id));
-    const moves = rows.map((r) => ({ id: r.id, x: r.x, y: r.y }));
-    B.live.drag(rows.map((r) => [r.id, r.x, r.y, r.w, r.h]));
-    call('el_move', { p_moves: moves })
-      .catch((err) => {
-        resync();
-        if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
-        else toast(err.message, true);
-      })
-      .finally(() => rows.forEach((r) => B.myDrag.delete(r.id)));
-  }, 350);
+  nudgeTimer = setTimeout(flushNudge, 350);
+}
+
+function flushNudge() {
+  const from = nudgeFrom;
+  const ids = [...nudged].filter((id) => B.els.get(id));
+  nudged.clear();
+  nudgeFrom = null;
+  if (!ids.length) return;
+  commit(from);
+  raiseLocal(ids);
+  const moves = ids.map((id) => { const r = B.els.get(id); return { id, x: r.x, y: r.y }; });
+  B.live.drag(ids.map((id) => { const r = B.els.get(id); return [id, r.x, r.y, r.w, r.h]; }));
+  call('el_move', { p_moves: moves })
+    .catch((err) => {
+      // у остальных уже нарисованы новые места: возвращаем им прежние
+      B.live.drag(ids.map((id) => { const r = from.get(id); return [id, r.x, r.y, r.w, r.h]; }));
+      resync();
+      if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
+      else toast(err.message, true);
+    })
+    .finally(() => ids.forEach((id) => { B.myDrag.delete(id); B.nodes.get(id)?.classList.remove('lift'); }));
 }
 
 // Крупное действие с чужими элементами: предлагаем отправить на одобрение
@@ -1433,17 +1522,22 @@ function renderRequests() {
 
 // Маленький ярлычок у полочки: снятое можно сразу вернуть
 let undoTimer = 0;
-function undoChip(ids) {
+function undoChip(ids, entry) {
   const box = $('undo');
   // в общей стопке с уведомлениями, чтобы не ложиться друг на друга
   if (box.parentElement !== $('toasts')) $('toasts').prepend(box);
   box.innerHTML = `<span>${ids.length > 1 ? `снято: ${ids.length}` : 'снято'}</span><button class="minibtn" type="button">вернуть</button>`;
   box.hidden = false;
   clearTimeout(undoTimer);
-  undoTimer = setTimeout(() => { box.hidden = true; }, 5000);
+  const hide = () => { undoTimer = setTimeout(() => { box.hidden = true; }, 8000); };
+  hide();
+  box.onpointerenter = () => clearTimeout(undoTimer);
+  box.onpointerleave = () => { clearTimeout(undoTimer); hide(); };
   box.querySelector('button').onclick = () => {
     box.hidden = true;
-    undo();
+    // после удаления успели сделать что-то ещё: «вернуть» относится только к удалению
+    if (isTop(entry)) undo();
+    else toast('Удаление уже не последнее действие, верните через Ctrl+Z или корзину');
   };
 }
 
@@ -1481,7 +1575,7 @@ function setSize(k) {
   for (const id of B.sel) {
     const r = B.els.get(id);
     if (r?.type !== 'text') continue;
-    const size = Math.max(16, Math.min(160, Math.round((r.data.size || 44) * k)));
+    const size = Math.max(16, Math.min(160, Math.round((r.data.size || 36) * k)));
     B.els.set(id, { ...r, data: { ...r.data, size } });
     renderEl(id);
     patchEl(id, { data: { size } }).then(() => syncTextBox(id));
@@ -1499,7 +1593,7 @@ function startEdit(id) {
   finishEdit();
   const row = B.els.get(id);
   const node = B.nodes.get(id);
-  if (!row || !node || row.type === 'link') return;
+  if (!row || !node || row.type === 'link' || row.type === 'draw') return;
   const ta = document.createElement('textarea');
   ta.value = row.data.text || '';
   ta.maxLength = row.type === 'frame' ? 80 : 5000;
@@ -1508,7 +1602,7 @@ function startEdit(id) {
   (node.querySelector('.edit-host') || node).append(ta);
   const ed = { id, base: ta.value, version: row.version, ta, timer: 0, saving: false, again: false, before: snap([id]) };
   B.editing = ed;
-  B.sel = new Set([id]);
+  setSelection([id]);
   renderEl(id);
   sizeTextEl(ed);
   ta.focus();
@@ -1548,7 +1642,9 @@ function sizeTextEl(ed) {
   const node = B.nodes.get(ed.id);
   const row = B.els.get(ed.id);
   if (!node || !['text', 'list', 'image', 'frame'].includes(row?.type)) return;
-  node.querySelector('.body').textContent = ed.ta.value + '​';
+  const body = node.querySelector('.body');
+  body.textContent = ed.ta.value + '​';
+  body._text = undefined; // список после правки соберётся заново
   queueStrings();
 }
 
@@ -1567,6 +1663,8 @@ function mergeIntoEditor(row) {
   const ed = B.editing;
   if (row.version <= ed.version) return;
   const theirs = row.data.text || '';
+  // эхо собственной отправки: сливать нечего, иначе напечатанное задвоится
+  if (ed.inflight !== undefined && theirs === ed.inflight) { ed.base = theirs; ed.version = row.version; return; }
   if (theirs !== ed.base) {
     const merged = merge3(ed.base, ed.ta.value, theirs);
     setEditorText(ed, merged);
@@ -1578,13 +1676,18 @@ function mergeIntoEditor(row) {
 
 async function flushText(ed) {
   clearTimeout(ed.timer);
+  if (ed.dead) return;
   if (ed.saving) { ed.again = true; return; }
   const text = ed.ta.value;
   if (text === ed.base) return;
   ed.saving = true;
   try {
     await B.els.get(ed.id)?._creating;
+    if (ed.dead) return;
+    ed.inflight = text;
     const res = await call('el_update', { p_id: ed.id, p_base_version: ed.version, p_patch: { data: { text } } });
+    ed.inflight = undefined;
+    ed.fails = 0;
     const el = res.element;
     if (res.ok) {
       ed.base = text;
@@ -1603,10 +1706,15 @@ async function flushText(ed) {
       if (B.editing !== ed) renderEl(ed.id);
     }
   } catch (err) {
-    toast(err.message, true);
+    ed.inflight = undefined;
+    if (err.code === 'deleted' || err.code === 'not_found' || ed.dead) return;
+    // сеть моргнула: повторяем, текст не теряется
+    ed.fails = (ed.fails || 0) + 1;
+    if (ed.fails <= 5) ed.timer = setTimeout(() => flushText(ed), 1500 * ed.fails);
+    else { toast(err.message, true); resync(); }
   } finally {
     ed.saving = false;
-    if (ed.again) { ed.again = false; flushText(ed); }
+    if (ed.again && !ed.dead) { ed.again = false; flushText(ed); }
   }
 }
 
@@ -1621,13 +1729,16 @@ function finishEdit() {
   if (justCreated(ed.id)) refreshTop(ed.id);
   else commit(ed.before);
   ed.ta.remove();
-  flushText(ed);
   B.live.hold([], null);
   if (row?.type === 'text' && !text.trim()) {
-    B.sel = new Set([ed.id]);
+    // пустая надпись просто снимается, сохранять её текст незачем
+    ed.dead = true;
+    clearTimeout(ed.timer);
+    setSelection([ed.id]);
     deleteSel(true);
     return;
   }
+  flushText(ed);
   renderEl(ed.id);
   if (['text', 'list', 'image'].includes(row?.type)) syncTextBox(ed.id);
   placeSelTools();
@@ -1648,7 +1759,15 @@ function syncTextBox(id, quiet) {
 
 // ---------- Полоска у выделения ----------
 
+let selQueued = false, selForce = false;
 function placeSelTools(force) {
+  selForce = selForce || !!force;
+  if (selQueued) return;
+  selQueued = true;
+  requestAnimationFrame(() => { selQueued = false; const f = selForce; selForce = false; placeSelToolsNow(f); });
+}
+
+function placeSelToolsNow(force) {
   const box = $('seltools');
   if (!B || !B.sel.size || B.past || !canEdit()) { box.hidden = true; return; }
   const rows = [...B.sel].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at);
@@ -1692,11 +1811,16 @@ function placeSelTools(force) {
   if (x1 === Infinity) { box.hidden = true; return; }
   const { x, y, s } = B.cam;
   const bw = box.offsetWidth, bh = box.offsetHeight;
+  const vv = window.visualViewport;
+  const vTop = vv ? vv.offsetTop : 0, vH = vv ? vv.height : innerHeight;
+  const ledge = $('ledge');
+  const minTop = vTop + 64;
+  const maxTop = vTop + vH - bh - 12 - (B.editing || ledge.hidden ? 0 : ledge.offsetHeight + 12);
   let left = (x1 + x2) / 2 * s + x - bw / 2;
   let top = y1 * s + y - bh - 24;
-  if (top < 80) top = y2 * s + y + 24;
-  left = Math.max(24, Math.min(innerWidth - bw - 24, left));
-  top = Math.max(24, Math.min(innerHeight - bh - 24, top));
+  if (top < minTop) top = y2 * s + y + 24;
+  left = Math.max(12, Math.min(innerWidth - bw - 12, left));
+  top = Math.max(minTop, Math.min(maxTop, top));
   box.style.left = left + 'px';
   box.style.top = top + 'px';
 }
@@ -1704,7 +1828,19 @@ function placeSelTools(force) {
 function setSelection(ids) {
   const old = B.sel;
   B.sel = new Set(ids);
-  for (const id of new Set([...old, ...B.sel])) renderEl(id);
+  const one = B.sel.size === 1, wasOne = old.size === 1;
+  let changed = false;
+  for (const id of new Set([...old, ...B.sel])) {
+    const node = B.nodes.get(id);
+    const now = B.sel.has(id), was = old.has(id);
+    if (now === was && one === wasOne) continue;
+    changed = true;
+    if (node) {
+      node.classList.toggle('sel', now);
+      node.classList.toggle('one', now && one);
+    } else renderEl(id);
+  }
+  if (changed) queueStrings();
   queueReorder();
   placeSelTools();
 }
@@ -1792,8 +1928,13 @@ function openCtx(sx, sy, target) {
     : `<button class="mi${it[0] === 'del' ? ' danger' : ''}" data-act="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
   box.hidden = false;
   const bw = box.offsetWidth, bh = box.offsetHeight;
+  // пальцем: меню над точкой касания, чтобы палец его не закрывал
+  const vv = window.visualViewport, vTop = vv ? vv.offsetTop : 0, vH = vv ? vv.height : innerHeight;
+  let top = B.touchMenu ? sy - bh - 16 : sy;
+  if (top < vTop + 8) top = B.touchMenu ? sy + 24 : top;
   box.style.left = Math.max(8, Math.min(innerWidth - bw - 8, sx)) + 'px';
-  box.style.top = Math.max(8, Math.min(innerHeight - bh - 8, sy)) + 'px';
+  box.style.top = Math.max(vTop + 8, Math.min(vTop + vH - bh - 8, top)) + 'px';
+  B.touchMenu = false;
   box.onclick = (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (!act) return;
@@ -1842,9 +1983,13 @@ function bindInput() {
   };
 
   stage.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('textarea, input')) return;
     e.preventDefault();
     if (B.past) return;
     clearTimeout(longPress);
+    if (g?.mode === 'drag' || g?.mode === 'resize') endGesture(true);
+    if (g?.mode === 'stroke') drawTemp(null);
+    if (g?.mode === 'erase') g.ids.forEach((i) => B.nodes.get(i)?.classList.remove('erasing'));
     g = null;
     openCtx(e.clientX, e.clientY, targetOf(e));
   });
@@ -1861,6 +2006,7 @@ function bindInput() {
       // два пальца: масштаб и сдвиг; начатое перетаскивание откатываем к началу
       if (g?.mode === 'drag' || g?.mode === 'resize') endGesture(true);
       if (g?.mode === 'stroke') drawTemp(null);
+      if (g?.mode === 'erase') g.ids.forEach((i) => B.nodes.get(i)?.classList.remove('erasing'));
       manualCamera();
       const [a, b] = [...pts.values()];
       g = { mode: 'pinch', d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 };
@@ -1879,6 +2025,7 @@ function bindInput() {
         if (g && !g.moved) {
           if (g.mode === 'drag' || g.mode === 'press') endGesture(true);
           g = null;
+          B.touchMenu = true;
           openCtx(e.clientX, e.clientY, t);
         }
       }, 550);
@@ -1888,7 +2035,7 @@ function bindInput() {
     const box = e.target.closest('[data-li]');
     if (!panBtn && box && canEdit() && !B.tool) {
       const elId = box.closest('.el').dataset.id;
-      if (B.editing?.id !== elId) { toggleItem(elId, Number(box.dataset.li)); g = null; return; }
+      if (B.editing?.id !== elId) { g = { mode: 'tick', id: elId, li: Number(box.dataset.li), sx: e.clientX, sy: e.clientY, moved: false }; return; }
     }
 
     // мелок рисует поверх всего, ластик стирает линии мелка
@@ -1914,7 +2061,7 @@ function bindInput() {
 
     // голосование: тык в элемент втыкает кнопку, тык в свою кнопку вынимает
     const vb = e.target.closest('[data-vote]');
-    if (!panBtn && vb) { voteToggle(vb.dataset.vote); g = null; return; }
+    if (!panBtn && vb) { g = { mode: 'vote', id: vb.dataset.vote, sx: e.clientX, sy: e.clientY, moved: false }; return; }
 
     // нитка: от первого элемента ко второму
     if (!panBtn && B.tool === 'link' && canEdit()) {
@@ -1934,6 +2081,7 @@ function bindInput() {
       e.preventDefault();
       if (e.target.closest('.grip')) {
         const r = B.els.get(id);
+        if (!mayTouch(r)) { g = null; return; }
         g = { mode: 'resize', id, sx: e.clientX, sy: e.clientY, w0: r.w, h0: r.h, moved: false };
         return;
       }
@@ -1944,7 +2092,11 @@ function bindInput() {
         s.has(id) ? s.delete(id) : s.add(id);
         setSelection(s);
       } else if (!wasSel) setSelection([id]);
-      const start = new Map([...withContents(B.sel)].filter((i) => B.els.get(i)?.type !== 'link').map((i) => [i, { x: B.els.get(i).x, y: B.els.get(i).y }]));
+      // тащим только то, что можно трогать; про остальное одно предупреждение
+      const all = [...withContents(B.sel)].map((i) => B.els.get(i)).filter((r) => r && r.type !== 'link' && !r.deleted_at);
+      const skip = all.find((r) => !canTouch(r));
+      if (skip) mayTouch(skip);
+      const start = new Map(all.filter(canTouch).map((r) => [r.id, { x: r.x, y: r.y }]));
       g = { mode: 'press', id, wasSel, sx: e.clientX, sy: e.clientY, start, moved: false };
       return;
     }
@@ -1962,7 +2114,7 @@ function bindInput() {
 
   stage.addEventListener('pointermove', (e) => {
     const w = toWorld(e.clientX, e.clientY);
-    B.live.cursor(w.x, w.y);
+    if (g?.mode !== 'drag') B.live.cursor(w.x, w.y); // при переносе позиция и так уходит
     if (B.linkFrom) { tempEnd = w; queueStrings(); }
     if (!pts.has(e.pointerId)) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1996,22 +2148,25 @@ function bindInput() {
     g.moved = true;
     clearTimeout(longPress);
 
+    if (g.mode === 'tick' || g.mode === 'vote') g = { mode: 'pan', sx: g.sx, sy: g.sy, cx: B.cam.x - dx, cy: B.cam.y - dy, moved: true, empty: false };
     if (g.mode === 'box') {
       let box = $('boxsel');
       if (!box) { box = document.createElement('div'); box.id = 'boxsel'; box.className = 'boxsel'; $('app').append(box); }
       const x1 = Math.min(g.sx, e.clientX), y1 = Math.min(g.sy, e.clientY);
       Object.assign(box.style, { left: x1 + 'px', top: y1 + 'px', width: Math.abs(dx) + 'px', height: Math.abs(dy) + 'px' });
       const a = toWorld(x1, y1), b = toWorld(Math.max(g.sx, e.clientX), Math.max(g.sy, e.clientY));
-      const hit = [...B.els.values()].filter((r) => {
-        if (r.deleted_at || r.type === 'link') return false;
-        const n = B.nodes.get(r.id);
-        const w = n?.offsetWidth || r.w, h = n?.offsetHeight || r.h;
-        // область выделяется, только если попала целиком, остальное достаточно задеть
-        return r.type === 'frame'
-          ? r.x >= a.x && r.y >= a.y && r.x + w <= b.x && r.y + h <= b.y
-          : r.x < b.x && r.x + w > a.x && r.y < b.y && r.y + h > a.y;
-      }).map((r) => r.id);
-      setSelection(new Set([...g.keep, ...hit]));
+      if (!g.rects) {
+        g.rects = [...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link').map((r) => {
+          const n = B.nodes.get(r.id);
+          return { id: r.id, frame: r.type === 'frame', x: r.x, y: r.y, w: n?.offsetWidth || r.w, h: n?.offsetHeight || r.h };
+        });
+      }
+      // область выделяется, только если попала целиком, остальное достаточно задеть
+      const hit = g.rects.filter((r) => (r.frame
+        ? r.x >= a.x && r.y >= a.y && r.x + r.w <= b.x && r.y + r.h <= b.y
+        : r.x < b.x && r.x + r.w > a.x && r.y < b.y && r.y + r.h > a.y)).map((r) => r.id);
+      const key = hit.join();
+      if (key !== g.hitKey) { g.hitKey = key; setSelection(new Set([...g.keep, ...hit])); }
     } else if (g.mode === 'pan') {
       manualCamera();
       stage.classList.add('panning');
@@ -2021,7 +2176,7 @@ function bindInput() {
     } else if (g.mode === 'press' || g.mode === 'drag') {
       if (g.mode === 'press') {
         g.mode = 'drag';
-        for (const id of g.start.keys()) { B.myDrag.add(id); B.nodes.get(id)?.classList.add('lift'); }
+        for (const id of g.start.keys()) { B.myDrag.add(id); B.lifting.add(id); B.nodes.get(id)?.classList.add('lift'); }
         B.live.hold([...g.start.keys()], 'move');
       }
       const items = [];
@@ -2080,6 +2235,8 @@ function bindInput() {
       g = null;
       return;
     }
+    if (g?.mode === 'tick' && !g.moved) toggleItem(g.id, g.li);
+    if (g?.mode === 'vote' && !g.moved) voteToggle(g.id);
     if (g?.mode === 'press' && !g.moved) {
       // касание по элементу: второй раз подряд открывает правку
       const now = Date.now();
@@ -2119,13 +2276,15 @@ function bindInput() {
         Promise.all(ids.map((id) => B.els.get(id)?._creating))
           .then(() => call('el_move', { p_moves: moves }))
           .catch((err) => {
+            // у остальных уже нарисованы новые места: возвращаем им прежние
+            B.live.drag([...cur.start].filter(([id]) => B.els.get(id)).map(([id, p]) => [id, p.x, p.y, B.els.get(id).w, B.els.get(id).h]));
             resync();
             if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
             else toast(err.message, true);
           })
           .finally(() => ids.forEach((id) => B.myDrag.delete(id)));
       } else ids.forEach((id) => B.myDrag.delete(id));
-      ids.forEach((id) => B.nodes.get(id)?.classList.remove('lift'));
+      ids.forEach((id) => { B.lifting.delete(id); B.nodes.get(id)?.classList.remove('lift'); });
     }
     if (cur.mode === 'resize' && cur.held) {
       const r = B.els.get(cur.id);
@@ -2173,21 +2332,26 @@ function bindInput() {
   }, true);
 
   addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && $('modal').hidden && !B.editing) {
+    // буква по месту клавиши: сочетания работают и на русской раскладке
+    const key = e.code?.startsWith('Key') ? e.code.slice(3).toLowerCase() : (e.key || '').toLowerCase();
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && key === 'f' && $('modal').hidden && !B.editing) {
       e.preventDefault();
       return openFind();
     }
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || !$('modal').hidden) return;
-    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable || !$('modal').hidden) return;
+    // кнопка в фокусе: Enter, пробел и Delete принадлежат ей, а не доске
+    if (e.target.closest?.('button, a, select') && ['Enter', ' ', 'Delete', 'Backspace'].includes(e.key)) return;
+    if (mod && (key === 'z' || key === 'y')) {
       e.preventDefault();
       if (!canEdit() || B.past) return;
-      return e.key.toLowerCase() === 'y' || e.shiftKey ? redo() : undo();
+      return key === 'y' || e.shiftKey ? redo() : undo();
     }
-    if (e.key === '/') { e.preventDefault(); openFind(); }
-    else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+    if (e.key === '/' || (!mod && e.code === 'Slash')) { e.preventDefault(); openFind(); }
+    else if (mod && key === 'a') {
       e.preventDefault();
       setSelection([...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link').map((r) => r.id));
-    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    } else if (mod && key === 'd') {
       e.preventDefault();
       duplicateSel();
     } else if (e.key.startsWith('Arrow') && B.sel.size && canEdit() && !B.past) {
@@ -2203,16 +2367,18 @@ function bindInput() {
       else if (B.tool) setTool(null);
       else setSelection([]);
     } else if (e.key === 'Enter' && B.sel.size === 1) { e.preventDefault(); startEdit([...B.sel][0]); }
-    else if (e.key === '+' || e.key === '=') zoomAt(innerWidth / 2, innerHeight / 2, 1.25);
-    else if (e.key === '-') zoomAt(innerWidth / 2, innerHeight / 2, 0.8);
-    else if (e.key === '0') zoomAt(innerWidth / 2, innerHeight / 2, 1 / B.cam.s);
-    else if (!e.ctrlKey && !e.metaKey && !e.altKey && canEdit()) {
-      const key = e.key.toLowerCase();
+    else if (mod || e.altKey) return; // Ctrl с плюсом и минусом масштабирует сам браузер
+    else if (e.key === '+' || e.key === '=') { manualCamera(); zoomAt(innerWidth / 2, innerHeight / 2, 1.25); }
+    else if (e.key === '-') { manualCamera(); zoomAt(innerWidth / 2, innerHeight / 2, 0.8); }
+    else if (e.key === '0') { manualCamera(); zoomAt(innerWidth / 2, innerHeight / 2, 1 / B.cam.s); }
+    else if (canEdit()) {
       if (key === 'p') return pickPhoto();
       const k = { n: 'note', t: 'text', l: 'link', k: 'list', d: 'draw', f: 'frame' }[key];
       if (k) setTool(B.tool === k ? null : k);
     }
   });
 
-  addEventListener('resize', applyCamera);
+  addEventListener('resize', () => { applyCamera(); closeCtx(); $('menu').hidden = true; });
+  window.visualViewport?.addEventListener('resize', () => placeSelTools());
+  window.visualViewport?.addEventListener('scroll', () => placeSelTools());
 }

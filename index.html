@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+  <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#b48a5e">
   <title>Доска</title>
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
@@ -12,12 +13,29 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Доска">
   <link rel="stylesheet" href="css/app.css">
+  <link rel="modulepreload" href="js/main.js">
+  <link rel="modulepreload" href="js/api.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/cork.js">
+  <link rel="modulepreload" href="js/pwa.js">
+  <link rel="modulepreload" href="js/board.js">
+  <link rel="modulepreload" href="js/icons.js">
+  <link rel="modulepreload" href="js/live.js">
+  <link rel="modulepreload" href="js/history.js">
+  <link rel="modulepreload" href="js/merge.js">
+  <link rel="modulepreload" href="js/extras.js">
+  <link rel="modulepreload" href="js/clip.js">
+  <link rel="modulepreload" href="js/timer.js">
+  <link rel="modulepreload" href="js/undo.js">
 </head>
 <body>
   <!-- Стартовый экран и вход -->
-  <main id="gate" class="gate" hidden></main>
+  <main id="gate" class="gate"><div class="card loading-card"><span class="spin" aria-label="Загрузка"></span></div></main>
 
   <!-- Доска -->
   <div id="app" class="app" hidden>
@@ -46,9 +64,12 @@
       <button id="btnInvite" class="btn pri" type="button" aria-label="Пригласить"></button>
     </header>
     <div id="menu" class="pop menu" hidden></div>
-    <div id="followBar" class="bar followbar" hidden></div>
-    <div id="requests" class="requests" hidden></div>
-    <div id="find" class="bar findbar" hidden></div>
+    <!-- полоски под верхней строкой: слежение, запросы, поиск; встают друг под другом -->
+    <div class="banners">
+      <div id="find" class="bar findbar" hidden></div>
+      <div id="followBar" class="bar followbar" hidden></div>
+      <div id="requests" class="requests" hidden></div>
+    </div>
 
     <nav id="ledge" class="ledge" aria-label="Инструменты"></nav>
     <div class="corner">
@@ -62,14 +83,14 @@
       <span>Выберите инструмент внизу</span>
     </div>
 
-    <aside id="history" class="hist" hidden></aside>
+    <aside id="history" class="hist" aria-label="История" hidden></aside>
     <div id="pastBar" class="bar pastbar" hidden></div>
   </div>
 
   <div id="modal" class="modal" hidden></div>
-  <div id="toasts" class="toasts"></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" crossorigin="anonymous" defer></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

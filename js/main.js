@@ -85,6 +85,7 @@ function landing() {
     e.preventDefault();
     const btn = root.querySelector('.bigbtn');
     btn.disabled = true;
+    btn.textContent = 'Создаю…';
     try {
       await ensureUser();
       const n = name.value.trim();
@@ -101,6 +102,7 @@ function landing() {
       el.textContent = err.message;
       el.hidden = false;
       btn.disabled = false;
+      btn.textContent = 'Создать доску';
     }
   };
 }

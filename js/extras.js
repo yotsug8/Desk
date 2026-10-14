@@ -95,7 +95,7 @@ function mark() {
   const cur = find.hits[find.i];
   for (const [id, node] of B.nodes) {
     node.classList.toggle('found', hits.has(id));
-    node.classList.toggle('cur', on && id === cur);
+    node.classList.toggle('found-cur', on && id === cur);
   }
   const cnt = $('find').querySelector('.cnt');
   if (cnt) cnt.textContent = !on ? '' : find.hits.length ? `${find.i + 1} из ${find.hits.length}` : 'нет';
@@ -256,7 +256,8 @@ async function toPNG() {
   const x1 = Math.min(...solid.map((r) => r.x)) - pad, y1 = Math.min(...solid.map((r) => r.y)) - pad;
   const x2 = Math.max(...solid.map((r) => r.x + r.w)) + pad, y2 = Math.max(...solid.map((r) => r.y + r.h)) + pad;
   // не больше 8000 точек по стороне, но и не мельче обычного вида
-  const sc = Math.min(2, 8000 / (x2 - x1), 8000 / (y2 - y1));
+  // iOS не даёт холст больше ~16 мегапикселей
+  const sc = Math.min(2, 8000 / (x2 - x1), 8000 / (y2 - y1), Math.sqrt(16e6 / ((x2 - x1) * (y2 - y1))));
   const cv = document.createElement('canvas');
   cv.width = Math.ceil((x2 - x1) * sc);
   cv.height = Math.ceil((y2 - y1) * sc);
