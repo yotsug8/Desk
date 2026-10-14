@@ -1406,7 +1406,10 @@ function keepInView(id, now) {
     const node = B.nodes.get(id);
     if (!node || B.editing?.id !== id) return;
     const vv = window.visualViewport;
-    const vh = vv ? vv.height : innerHeight, vt = vv ? vv.offsetTop : 0;
+    let vh = vv ? vv.height : innerHeight;
+    const vt = vv ? vv.offsetTop : 0;
+    // клавиатура ещё не выехала: считаем, что она займёт нижнюю половину экрана
+    if (coarse() && vh > innerHeight - 120) vh = innerHeight * 0.5;
     // меряем то, где идёт набор: подпись фото и области, а не весь элемент
     const r = (node.querySelector('.edit-host') || node).getBoundingClientRect();
     const s = B.cam.s, w = r.width, h = r.height;
@@ -1427,8 +1430,10 @@ function keepInView(id, now) {
   fix();
   if (now) return;
   // клавиатура выезжает не сразу
-  if (matchMedia('(pointer: coarse)').matches) setTimeout(fix, 350);
+  if (coarse()) setTimeout(fix, 350);
 }
+
+const coarse = () => matchMedia('(pointer: coarse)').matches;
 
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
 let nudgeTimer = 0, nudgeFrom = null;
@@ -1612,7 +1617,10 @@ function startEdit(id) {
   setSelection([id]);
   renderEl(id);
   sizeTextEl(ed);
-  ta.focus();
+  // сначала ставим элемент туда, где клавиатура его не закроет, и только потом фокус:
+  // браузеру не нужно самому прокручивать страницу, и интерфейс не съезжает
+  keepInView(id);
+  ta.focus({ preventScroll: true });
   ta.setSelectionRange(ta.value.length, ta.value.length);
   // доску увели, а человек печатает: сами возвращаем текст в кадр до того,
   // как браузер начнёт прокручивать страницу к курсору
@@ -1643,7 +1651,6 @@ function startEdit(id) {
   ta.addEventListener('blur', () => setTimeout(() => { if (B.editing === ed && document.activeElement !== ta) finishEdit(); }, 0));
   B.live.hold([id], 'edit');
   document.body.classList.add('editing');
-  keepInView(id);
   placeSelTools();
 }
 
@@ -2407,6 +2414,20 @@ function bindInput() {
   });
 
   addEventListener('resize', () => { applyCamera(); closeCtx(); $('menu').hidden = true; });
-  window.visualViewport?.addEventListener('resize', () => placeSelTools());
+  // клавиатура выезжает и уезжает: панели прячем на время движения и возвращаем на место,
+  // когда экран успокоился, чтобы они не скакали за каждым шагом анимации
+  let vvTimer = 0;
+  // после клавиатуры iOS иногда оставляет страницу прокрученной: возвращаем на место
+  addEventListener('scroll', () => { if (!B.editing && (scrollX || scrollY)) scrollTo(0, 0); }, { passive: true });
+  window.visualViewport?.addEventListener('resize', () => {
+    if (!coarse()) return placeSelTools();
+    document.body.classList.add('vv-moving');
+    clearTimeout(vvTimer);
+    vvTimer = setTimeout(() => {
+      document.body.classList.remove('vv-moving');
+      document.body.classList.toggle('kb', visualViewport.height < innerHeight - 120);
+      placeSelTools();
+    }, 250);
+  });
   window.visualViewport?.addEventListener('scroll', () => placeSelTools());
 }

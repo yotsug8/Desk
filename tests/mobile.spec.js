@@ -55,9 +55,15 @@ test('при открытой клавиатуре палец двигает д�
   await page.waitForTimeout(800);
   const close = page.locator('[data-close]'); if (await close.count()) await close.first().click();
   await page.locator('.tool[data-tool=note]').click();
-  await page.mouse.click(195, 500);
+  // заметка в верхней половине: доска не сдвигается, списки остаются в кадре
+  const [ex, ey] = await page.evaluate(() => {
+    for (let y = 260; y < 400; y += 20) for (let x = 60; x < 330; x += 30) {
+      if (document.elementFromPoint(x, y)?.id === 'stage' || document.elementFromPoint(x, y)?.classList.contains('world')) return [x, y];
+    }
+  });
+  await page.mouse.click(ex, ey);
+  await expect(page.locator('body.editing')).toHaveCount(1);
   await page.waitForTimeout(500);
-  const ed = page.locator('.el:has(textarea)');
   const before = await page.evaluate(() => document.querySelector('.el.list').getBoundingClientRect().top);
   const listBox0 = await page.evaluate(() => { const r = document.querySelector('.el.list'); return [r.style.left, r.style.top]; });
   // тянем пальцем по списку: доска сдвигается, список не перетаскивается
@@ -69,7 +75,9 @@ test('при открытой клавиатуре палец двигает д�
       const r = el.getBoundingClientRect();
       for (let k = 0.2; k < 0.9; k += 0.1) {
         const px = r.left + r.width / 2, py = r.top + r.height * k;
-        if (el.contains(document.elementFromPoint(px, py))) return [px, py];
+        const ed = document.querySelector('.el:has(textarea)').getBoundingClientRect();
+        const onEd = px > ed.left - 20 && px < ed.right + 20 && py > ed.top - 20 && py < ed.bottom + 20;
+        if (!onEd && py > 100 && py < innerHeight - 200 && el.contains(document.elementFromPoint(px, py))) return [px, py];
       }
     }
   });

@@ -34,7 +34,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; }
-html, body { height: 100%; }
+html, body { height: 100%; overscroll-behavior: none; }
 body { font: 14px/1.45 var(--sans); color: var(--ink); background: var(--cork); overflow: hidden; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
 button:focus-visible, a:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
@@ -332,7 +332,11 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
 }
 /* Пальцы: при правке текста полка не нужна и закрывает клавиатуру */
 @media (pointer: coarse) {
-  body.editing .ledge, body.editing .corner { display: none; }
+  /* пока открыта клавиатура, полка и угол спрятаны; возвращаются плавно, когда она уехала */
+  .ledge, .corner { transition: opacity .2s, visibility .2s; }
+  body.editing .ledge, body.editing .corner, body.kb .ledge, body.kb .corner { opacity: 0; visibility: hidden; pointer-events: none; transition: none; }
+  .seltools { transition: opacity .15s; }
+  body.vv-moving .seltools { opacity: 0; transition: none; }
   .el .grip { width: 18px; height: 18px; right: -10px; bottom: -10px; }
 }
 /* Большие экраны: всё чуть крупнее */

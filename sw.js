@@ -1,7 +1,7 @@
 // Service worker: оболочка приложения открывается и без сети.
 // Свои файлы: сеть без HTTP-кэша (свежая версия сразу после выкладки), при сбое или долгом ответе копия из кэша.
 // Библиотека и шрифты с версией в адресе: сразу из кэша. Запросы к серверу доски не трогаем.
-const CACHE = 'desk-v16';
+const CACHE = 'desk-v17';
 const SHELL = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/main.js', 'js/board.js', 'js/api.js', 'js/config.js', 'js/cork.js', 'js/extras.js', 'js/history.js',
