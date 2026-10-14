@@ -1409,7 +1409,7 @@ function keepInView(id, now) {
     let vh = vv ? vv.height : innerHeight;
     const vt = vv ? vv.offsetTop : 0;
     // клавиатура ещё не выехала: считаем, что она займёт нижнюю половину экрана
-    if (coarse() && vh > innerHeight - 120) vh = innerHeight * 0.5;
+    if (coarse() && !keyboardOpen()) vh = screenH() * 0.5;
     // меряем то, где идёт набор: подпись фото и области, а не весь элемент
     const r = (node.querySelector('.edit-host') || node).getBoundingClientRect();
     const s = B.cam.s, w = r.width, h = r.height;
@@ -1434,6 +1434,17 @@ function keepInView(id, now) {
 }
 
 const coarse = () => matchMedia('(pointer: coarse)').matches;
+
+// Высота экрана без клавиатуры. Одни браузеры при клавиатуре ужимают только видимую часть,
+// другие всё окно (innerHeight тоже падает), поэтому помним самую большую высоту при этой ширине
+let fullH = 0, fullW = 0;
+function screenH() {
+  const h = window.visualViewport ? visualViewport.height : innerHeight;
+  if (innerWidth !== fullW) { fullW = innerWidth; fullH = 0; } // поворот: считаем заново
+  fullH = Math.max(fullH, h, B?.editing ? 0 : innerHeight);
+  return fullH;
+}
+const keyboardOpen = () => (window.visualViewport ? visualViewport.height : innerHeight) < screenH() - 120;
 
 // Сдвиг стрелками: двигаем сразу, сохраняем одной пачкой, когда клавиши отпустили
 let nudgeTimer = 0, nudgeFrom = null;
@@ -2445,7 +2456,7 @@ function bindInput() {
     clearTimeout(vvTimer);
     vvTimer = setTimeout(() => {
       document.body.classList.remove('vv-moving');
-      document.body.classList.toggle('kb', visualViewport.height < innerHeight - 120);
+      document.body.classList.toggle('kb', keyboardOpen());
       placeSelTools();
     }, 250);
   });

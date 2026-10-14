@@ -116,3 +116,32 @@ test('клавиатура ужимает окно: верхняя панель 
   const b = await pos();
   expect(b).toEqual(a);
 });
+test('клавиатура уезжает: нижняя панель появляется уже на месте, без прыжков', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.bigbtn');
+  await page.locator('#ledge').waitFor();
+  await page.waitForTimeout(800);
+  const close = page.locator('[data-close]'); if (await close.count()) await close.first().click();
+  const ledge = () => page.evaluate(() => { const n = document.getElementById('ledge'); return { shown: getComputedStyle(n).visibility === 'visible', top: Math.round(n.getBoundingClientRect().top) }; });
+  const final = await ledge();
+  await page.locator('.tool[data-tool=note]').click();
+  await page.mouse.click(195, 300);
+  await expect(page.locator('body.editing')).toHaveCount(1);
+  // клавиатура выехала и ужала окно
+  await page.setViewportSize({ width: 390, height: 420 });
+  await page.waitForTimeout(400);
+  // правку закрыли, клавиатура уезжает по шагам
+  await page.touchscreen.tap(40, 200);
+  await expect(page.locator('body.editing')).toHaveCount(0);
+  for (const h of [500, 620, 740, 844]) {
+    expect((await ledge()).shown).toBe(false);
+    await page.setViewportSize({ width: 390, height: h });
+    await page.waitForTimeout(40);
+  }
+  await page.waitForTimeout(600);
+  expect(await ledge()).toEqual(final);
+  await ctx.close();
+});
