@@ -28,6 +28,7 @@ export function commit(before) {
   if (same) return null;
   const entry = { before, after };
   done.push(entry);
+  commits++;
   if (done.length > LIMIT) done.shift();
   undone.length = 0;
   return entry;
@@ -58,16 +59,21 @@ export const isTop = (entry) => !!entry && done[done.length - 1] === entry;
 
 // Нажатия подряд встают в очередь, ни одно не теряется
 let chain = Promise.resolve();
+let commits = 0; // сколько новых действий записано: чтобы отмена, шедшая параллельно, не встала поверх них
 export const undo = () => (chain = chain.then(() => step(done, undone, 'before', 'Отменено')));
 export const redo = () => (chain = chain.then(() => step(undone, done, 'after', 'Повторено')));
 
 async function step(from, to, side, msg) {
   const entry = from.pop();
   if (!entry) { toast(side === 'before' ? 'Нечего отменять' : 'Нечего повторять'); return; }
+  const mark = commits, at = to.length;
   try {
     await A.idle();
     await apply(entry[side], entry[side === 'before' ? 'after' : 'before']);
-    to.push(entry);
+    if (commits === mark) to.push(entry);
+    // пока шёл повтор, человек сделал новое действие: повтор встаёт под него, а не сверху
+    else if (to === done) done.splice(Math.min(at, done.length), 0, entry);
+    // пока шла отмена, появилось новое действие: повторять отменённое уже нельзя
     toast(msg);
   } catch (err) {
     toast(err.message, true);
