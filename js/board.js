@@ -1083,11 +1083,15 @@ function linkify(text) {
 function renderList(body, text) {
   if (body._text === text) return;
   body._text = text;
+  let total = 0, done = 0;
   body.innerHTML = text.split('\n').map((line, i) => {
     const m = line.match(/^\[( |x)\] ?(.*)$/);
     if (!m) return line.trim() ? `<div class="lh">${linkify(line)}</div>` : '';
+    if (m[2].trim()) { total++; if (m[1] === 'x') done++; }
     return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${linkify(m[2]) || '&nbsp;'}</span></div>`;
-  }).join('');
+  }).join('')
+    // сколько сделано: от двух пунктов
+    + (total > 1 ? `<div class="lp${done === total ? ' all' : ''}"><span>${done} из ${total}</span><i style="--p:${Math.round((done / total) * 100)}%"></i></div>` : '');
 }
 
 const imageURL = (src) => `${SERVER.url}/storage/v1/object/public/images/${src}`;
