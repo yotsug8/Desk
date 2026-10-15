@@ -9,6 +9,8 @@ import { initHistory } from './history.js';
 import { view, corkLayer } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
+import { transferOut } from './transfer.js';
+import { initNews } from './news.js';
 import { initClip, duplicateSel } from './clip.js';
 import { initUndo, snap, commit, justCreated, refreshTop, undo, redo, canUndo, isTop } from './undo.js';
 import { initTimer, onTimer, onTimerAsk, timerDialog } from './timer.js';
@@ -103,7 +105,7 @@ export async function startBoard(opts) {
   B.live = connectLive(B, {
     onElement: applyRemote,
     onMember,
-    onHistory: (row) => B.history.onRow(row),
+    onHistory: (row) => { B.history.onRow(row); B.news?.onHistory(row); },
     onDrag,
     onPresence,
     onHold,
@@ -126,6 +128,7 @@ export async function startBoard(opts) {
     onTimerAsk,
   });
   B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
+  B.news = initNews(B, { fitCamera, memberName, renderEl });
   initUndo(B, {
     call, applyRemote, resync,
     // дождаться, пока уйдут все начатые сохранения: отмена должна видеть итог на сервере
@@ -238,6 +241,7 @@ function toggleMenu(force) {
     '#Ещё',
     ['keys', 'keyboard', 'Горячие клавиши', ''],
     ['boards', 'grid', 'Все доски', ''],
+    ['transfer', 'devices', 'Перенести на другой компьютер', ''],
     canInstall() ? ['install', 'install', 'Установить приложение', ''] : null,
   ].filter(Boolean);
   box.innerHTML = items.map((it) => (typeof it === 'string' ? `<div class="mh">${it.slice(1)}</div>` : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
@@ -257,6 +261,7 @@ function toggleMenu(force) {
     if (m === 'trash') trashDialog();
     if (m === 'people') peopleDialog();
     if (m === 'boards') location.href = './';
+    if (m === 'transfer') transferOut();
   };
 }
 
@@ -637,7 +642,7 @@ function onMember(m) {
     const was = B.me.role;
     B.me = m;
     if (m.banned) location.reload();
-    if (was !== m.role) { buildLedge(); updateStatus(); }
+    if (was !== m.role) { buildLedge(); updateStatus(); } else updateStatus(); // и время входа (статус новичка)
   }
   if (prev && prev.name === m.name && prev.color === m.color) return;
   for (const [id, row] of B.els) if (row.created_by === m.user_id) renderEl(id);
@@ -723,8 +728,9 @@ function ripple(x, y, color) {
 
 // ---------- Камера и пробка ----------
 
-function fitCamera(animated) {
-  const live = [...B.els.values()].filter((e) => !e.deleted_at && e.type !== 'link');
+// Показать всю доску или только переданные элементы
+function fitCamera(animated, only) {
+  const live = (only || [...B.els.values()]).filter((e) => !e.deleted_at && e.type !== 'link');
   if (!live.length) {
     B.cam = { x: innerWidth / 2, y: innerHeight / 2, s: 1 };
     return applyCamera();
@@ -975,7 +981,8 @@ function renderElNow(id) {
   const t = v.type;
   const sel = B.sel.has(id);
   const color = v.data.color || DEFAULT_COLOR[t] || 'ink';
-  const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.lifting.has(id) ? ' lift' : '');
+  const keep = (node.classList.contains('drop') ? ' drop' : '') + (B.lifting.has(id) ? ' lift' : '')
+    + (node._far ? ' far' : '') + (B.news?.isFresh(id) ? ' fresh' : '');
   node.className = `el ${t} c-${color}${sel ? ' sel' : ''}${sel && B.sel.size === 1 ? ' one' : ''}${B.past ? ' past' : ''}${B.linkFrom === id ? ' linking' : ''}${keep}`;
   if (t !== 'draw' && t !== 'frame') node.style.setProperty('--rot', tilt(id) + 'deg');
   node.style.left = v.x + 'px';

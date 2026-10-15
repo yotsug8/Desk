@@ -10,6 +10,7 @@ const P = {
   minus: '<path d="M5 12h14"/>',
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  devices: '<rect x="2" y="4" width="13" height="10" rx="1.5"/><path d="M6 18h5M8.5 14v4"/><rect x="17" y="8" width="5" height="12" rx="1.5"/>',
   row: '<rect x="2.5" y="7" width="5" height="10" rx="1"/><rect x="9.5" y="7" width="5" height="10" rx="1"/><rect x="16.5" y="7" width="5" height="10" rx="1"/>',
   column: '<rect x="7" y="2.5" width="10" height="5" rx="1"/><rect x="7" y="9.5" width="10" height="5" rx="1"/><rect x="7" y="16.5" width="10" height="5" rx="1"/>',
   bigger: '<path d="M4 18L9 6l5 12M5.8 14h6.4M17 9v6M14 12h6"/>',

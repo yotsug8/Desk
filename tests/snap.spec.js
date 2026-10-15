@@ -60,6 +60,7 @@ test('выделенное выстраивается в ряд и в столб
   expect(b.x - a.x).toBe(w + 24);
   expect(c.x - b.x).toBe(w + 24);
 
+  await page.waitForTimeout(300); // панель выделения переехала к новому месту группы
   await page.click('#seltools [data-act=column]');
   await waitSaved(page);
   [a, b, c] = await all();
@@ -68,6 +69,7 @@ test('выделенное выстраивается в ряд и в столб
   expect(c.y).toBeGreaterThan(b.y);
 
   // две отмены возвращают как было
+  await page.waitForTimeout(300);
   await page.keyboard.press('Control+z');
   await page.waitForTimeout(450);
   await page.keyboard.press('Control+z');

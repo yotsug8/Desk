@@ -4,6 +4,7 @@ import { esc, toast } from './ui.js';
 import { startBoard } from './board.js';
 import { corkOn } from './cork.js';
 import './pwa.js';
+import { transferIn, transferOut, claimFromHash } from './transfer.js';
 
 // все модули загрузились: сторож загрузки в index.html больше не нужен
 window.__deskBooted = true;
@@ -81,7 +82,13 @@ function landing() {
       <div class="err" id="err" hidden></div>
     </form>
     ${recent.length ? `<div class="recent"><h2>Недавние доски</h2>${recent
-      .map((b) => `<a href="?b=${esc(b.id)}">${esc(b.title)}</a>`).join('')}</div>` : ''}`);
+      .map((b) => `<a href="?b=${esc(b.id)}">${esc(b.title)}</a>`).join('')}</div>` : ''}
+    <div class="tlinks">
+      ${recent.length ? '<button type="button" class="linkbtn" data-tout>Перенести доски на другой компьютер</button>' : ''}
+      <button type="button" class="linkbtn" data-tin>У меня есть код с другого компьютера</button>
+    </div>`);
+  root.querySelector('[data-tin]').onclick = () => transferIn(() => landing());
+  root.querySelector('[data-tout]')?.addEventListener('click', () => transferOut());
   const name = root.querySelector('#name');
   name.value = store.get('name', '');
   (name.value ? root.querySelector('#title') : name).focus();
@@ -141,6 +148,12 @@ async function enter(id, opts) {
     info = await rpc('board_info', { p_board: id });
   }
 
+  // перенесённая с другого компьютера ссылка владельца: права владельца переходят сюда молча
+  const kept = !secret && store.get('owner-' + id);
+  if (kept && info.me && !info.me.banned && info.me.role !== 'owner') {
+    if (await rpc('claim_owner', { p_board: id, p_secret: kept }).catch(() => false)) info = await rpc('board_info', { p_board: id });
+  }
+
   if (info.me?.banned) {
     showGate(`${HEAD}<p class="lead">Владелец закрыл вам доступ к доске «${esc(info.title)}».</p>`);
     return;
@@ -198,6 +211,7 @@ async function route(opts = {}) {
     showGate(`${HEAD}<p class="lead">Сервер недоступен.</p>`);
     return;
   }
+  await claimFromHash();
   const id = new URLSearchParams(location.search).get('b');
   if (!id) return landing();
   try {

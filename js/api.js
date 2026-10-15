@@ -24,6 +24,8 @@ const MESSAGES = {
   too_many_requests: 'Уже 3 запроса ждут одобрения',
   bad_link: 'Связать можно два разных элемента',
   rate_limit: 'Слишком быстро, подождите минуту',
+  same_device: 'Этот код создан на этом же компьютере',
+  bad_payload: 'Слишком много досок для переноса',
 };
 
 export class ApiError extends Error {}
