@@ -91,12 +91,15 @@ async function place(rows, { dx, dy }) {
 }
 
 // Текст из буфера: строки с маркерами становятся списком, остальное заметкой
-async function pasteText(text) {
+// Текст заметкой: из буфера или перетащенный из браузера (тогда at = куда бросили)
+export async function pasteText(text, where) {
+  if (!B || !A.canEdit() || B.past) return;
   text = text.replace(/\r\n?/g, '\n').trim().slice(0, 5000);
+  if (!text) return;
   const lines = text.split('\n').filter((l) => l.trim());
   const bullet = /^\s*(?:[-*•]|\d+[.)]|\[( |x|X)\])\s+/;
   const isList = lines.length > 1 && lines.filter((l) => bullet.test(l)).length >= lines.length / 2;
-  const at = pointer || A.toWorld(innerWidth / 2, innerHeight / 2);
+  const at = where || pointer || A.toWorld(innerWidth / 2, innerHeight / 2);
   const type = isList ? 'list' : 'note';
   const data = isList
     ? { text: lines.map((l) => {

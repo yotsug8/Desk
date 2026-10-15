@@ -11,7 +11,8 @@ import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, ex
 import { canInstall, installApp } from './pwa.js';
 import { transferOut } from './transfer.js';
 import { initNews } from './news.js';
-import { initClip, duplicateSel } from './clip.js';
+import { openPalette } from './palette.js';
+import { initClip, duplicateSel, pasteText } from './clip.js';
 import { initUndo, snap, commit, justCreated, refreshTop, undo, redo, canUndo, isTop } from './undo.js';
 import { initTimer, onTimer, onTimerAsk, timerDialog } from './timer.js';
 
@@ -222,12 +223,9 @@ function buildChrome() {
   updateStatus();
 }
 
-// Меню доски: всё, что относится к доске целиком
-function toggleMenu(force) {
-  const box = $('menu');
-  const open = force ?? box.hidden;
-  if (!open) { box.hidden = true; return; }
-  const items = [
+// Действия над доской: общие для меню доски и меню команд (Ctrl+K)
+function boardActions() {
+  return [
     '#Эта доска',
     ['find', 'search', 'Найти', 'Ctrl+F'],
     ['fit', 'fit', 'Показать всю доску', ''],
@@ -244,25 +242,66 @@ function toggleMenu(force) {
     ['transfer', 'devices', 'Перенести на другой компьютер', ''],
     canInstall() ? ['install', 'install', 'Установить приложение', ''] : null,
   ].filter(Boolean);
+}
+
+function runAction(m) {
+  if (m === 'summon') summon();
+  if (m === 'fit') fitCamera(true);
+  if (m === 'find') openFind();
+  if (m === 'timer') timerDialog();
+  if (m === 'export') exportDialog();
+  if (m === 'install') installApp();
+  if (m === 'rename') renameDialog();
+  if (m === 'keys') keysDialog();
+  if (m === 'trash') trashDialog();
+  if (m === 'people') peopleDialog();
+  if (m === 'boards') location.href = './';
+  if (m === 'transfer') transferOut();
+  if (m === 'history') B.history.toggle();
+  if (m === 'invite') inviteDialog();
+}
+
+// Меню доски: всё, что относится к доске целиком
+function toggleMenu(force) {
+  const box = $('menu');
+  const open = force ?? box.hidden;
+  if (!open) { box.hidden = true; return; }
+  const items = boardActions();
   box.innerHTML = items.map((it) => (typeof it === 'string' ? `<div class="mh">${it.slice(1)}</div>` : `<button class="mi" data-m="${it[0]}">${icon(it[1], true)}<span>${it[2]}</span>${it[3] ? `<kbd>${it[3]}</kbd>` : ''}</button>`)).join('');
   box.hidden = false;
   box.onclick = (e) => {
     const m = e.target.closest('[data-m]')?.dataset.m;
     if (!m) return;
     box.hidden = true;
-    if (m === 'summon') summon();
-    if (m === 'fit') fitCamera(true);
-    if (m === 'find') openFind();
-    if (m === 'timer') timerDialog();
-    if (m === 'export') exportDialog();
-    if (m === 'install') installApp();
-    if (m === 'rename') renameDialog();
-    if (m === 'keys') keysDialog();
-    if (m === 'trash') trashDialog();
-    if (m === 'people') peopleDialog();
-    if (m === 'boards') location.href = './';
-    if (m === 'transfer') transferOut();
+    runAction(m);
   };
+}
+
+// Меню команд: всё действием с клавиатуры, плюс переход к заметкам и областям по тексту
+function commandPalette() {
+  if (B.past) return;
+  const center = () => toWorld(view.w / 2, view.h / 2);
+  const create = canEdit() ? [
+    ['note', 'note', 'Новая заметка', 'N'], ['list', 'list', 'Новый список', 'K'], ['text', 'text', 'Новый текст', 'T'],
+    ['frame', 'frame', 'Новая область', 'F'], ['photo', 'image', 'Добавить фото', 'P'],
+  ] : [];
+  const cmds = [
+    ...create.map(([t, ic, label, kbd]) => ({ icon: ic, label, kbd, run: () => (t === 'photo' ? pickPhoto() : (() => { const c = center(); createEl(t, c.x - 100, c.y - 80); })()) })),
+    ...boardActions().filter((it) => typeof it !== 'string').map(([m, ic, label, kbd]) => ({ icon: ic, label, kbd, run: () => runAction(m) })),
+    { icon: 'clock', label: 'История', kbd: '', run: () => runAction('history') },
+    { icon: 'link', label: 'Пригласить', kbd: '', run: () => runAction('invite') },
+  ];
+  openPalette({
+    commands: cmds,
+    // элементы с текстом: области первыми
+    items: () => [...B.els.values()].filter((r) => !r.deleted_at && r.type !== 'link' && r.type !== 'draw' && (r.data.text || '').trim())
+      .sort((a, b) => (b.type === 'frame') - (a.type === 'frame')),
+    goTo: (r) => {
+      const n = B.nodes.get(r.id);
+      fitCamera(true, [{ ...r, w: boxW(n, r.w), h: boxH(n, r.h) }]);
+      setSelection([r.id]);
+    },
+  });
 }
 
 // Корзина: снятое за 30 дней, вернуть одним нажатием
@@ -354,7 +393,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['F', 'область'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Shift + протянуть', 'выделить рамкой'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + Z', 'отменить'], ['Ctrl + Shift + Z', 'повторить'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Alt + тянуть', 'без прилипания'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Shift + протянуть', 'выделить рамкой'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + K', 'меню команд'], ['Ctrl + Z', 'отменить'], ['Ctrl + Shift + Z', 'повторить'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Alt + тянуть', 'без прилипания'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -2657,10 +2696,18 @@ function bindInput() {
     const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith('image/'));
     if (f) { e.preventDefault(); addPhoto(f); }
   });
-  stage.addEventListener('dragover', (e) => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+  // на доску можно бросить картинку из папки, а также ссылку или текст из браузера
+  const droppable = (dt) => ['Files', 'text/uri-list', 'text/plain'].some((t) => dt.types.includes(t));
+  stage.addEventListener('dragover', (e) => { if (canEdit() && !B.past && droppable(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   stage.addEventListener('drop', (e) => {
+    if (!canEdit() || B.past) return;
+    const at = toWorld(e.clientX, e.clientY);
     const f = [...e.dataTransfer.files].find((x) => x.type.startsWith('image/'));
-    if (f) { e.preventDefault(); addPhoto(f, toWorld(e.clientX, e.clientY)); }
+    if (f) { e.preventDefault(); addPhoto(f, at); return; }
+    // ссылка: адрес из text/uri-list (строки с # это комментарии), иначе обычный текст
+    const uri = (e.dataTransfer.getData('text/uri-list') || '').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#'));
+    const text = e.dataTransfer.getData('text/plain') || uri || '';
+    if (text.trim()) { e.preventDefault(); pasteText(text, at); }
   });
 
   // Safari: жесты тачпада
@@ -2679,6 +2726,10 @@ function bindInput() {
     if (mod && key === 'f' && $('modal').hidden && !B.editing) {
       e.preventDefault();
       return openFind();
+    }
+    if (mod && key === 'k' && $('modal').hidden && !B.editing) {
+      e.preventDefault();
+      return commandPalette();
     }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable || !$('modal').hidden) return;
     // кнопка в фокусе: Enter, пробел и Delete принадлежат ей, а не доске

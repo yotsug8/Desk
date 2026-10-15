@@ -540,3 +540,15 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
 }
 @media (max-width: 640px) { .app:has(#timer:not([hidden])) .banners { top: calc(var(--top) + 98px); } }
 .av.more { --c: var(--panel); font-size: 12px; }
+
+/* меню команд (Ctrl+K) */
+.palette-back { position: fixed; inset: 0; z-index: 60; background: #1f1b1840; display: flex; justify-content: center; align-items: flex-start; padding: max(12vh, 60px) 12px 12px; animation: fadeIn .1s ease-out; }
+.palette { width: min(560px, 100%); max-height: min(460px, 70vh); display: flex; flex-direction: column; background: var(--paper); border-radius: 14px; box-shadow: 0 20px 60px #0006; overflow: hidden; animation: popIn .12s ease-out; }
+.pinput { border: 0; outline: none; background: transparent; padding: 16px 18px; font: 500 16px var(--sans); color: var(--ink); border-bottom: 1px solid var(--line); }
+.plist { overflow-y: auto; padding: 6px; }
+.pi { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 10px; border-radius: 8px; text-align: left; color: var(--ink); }
+.pi span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi.on { background: #0000000f; }
+.pi.hit span { font-weight: 500; }
+.pi kbd { font-size: 11px; color: var(--mute); padding: 1px 6px; border-radius: 5px; background: #0000000a; }
+.pempty { padding: 14px; color: var(--mute); text-align: center; }
