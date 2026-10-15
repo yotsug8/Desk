@@ -76,3 +76,14 @@ test('приложение можно установить: манифест и 
   expect(manifest.icons.some((i) => i.sizes === '512x512')).toBe(true);
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.active)).toBe(true);
 });
+
+test('колесо мыши с Ctrl: одно деление меняет масштаб на 15%', async ({ page }) => {
+  const { createBoard } = await import('./helpers.js');
+  await createBoard(page);
+  const s0 = await page.evaluate(() => window.__desk.cam.s);
+  await page.mouse.move(600, 400);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await expect.poll(() => page.evaluate(() => window.__desk.cam.s)).toBeCloseTo(Math.min(4, s0 * 1.15), 3);
+});

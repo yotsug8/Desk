@@ -185,3 +185,27 @@ test('панель цветов не мигает, когда начинаешь
   expect(log[0][1]).toMatch(/^shown/);
   await ctx.close();
 });
+test('бросок пальцем: доска докатывается и останавливается', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.tpl:has([value=empty])');
+  await page.click('.bigbtn');
+  await page.locator('#ledge').waitFor();
+  await page.waitForTimeout(800);
+  const close = page.locator('[data-close]'); if (await close.count()) await close.first().click();
+  const camX = () => page.evaluate(() => window.__desk.cam.x);
+  const cdp = await ctx.newCDPSession(page);
+  const tp = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
+  await tp('touchStart', [[100, 500]]);
+  for (let i = 1; i <= 8; i++) { await tp('touchMove', [[100 + i * 20, 500]]); await page.waitForTimeout(8); }
+  await tp('touchEnd', []);
+  const atRelease = await camX();
+  await page.waitForTimeout(1500);
+  const after = await camX();
+  expect(after).toBeGreaterThan(atRelease + 30); // докатилась дальше
+  await page.waitForTimeout(500);
+  expect(await camX()).toBe(after); // и остановилась
+  await ctx.close();
+});

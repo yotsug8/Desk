@@ -37,9 +37,22 @@ function tileURL() {
   return url;
 }
 
+// Картинка пробки живёт в таблице стилей, а не в style элемента: иначе при каждом сдвиге
+// браузер заново собирает длинный атрибут style с картинкой внутри, и движение тормозит
+let sheet = false;
+function useTile(el) {
+  if (!sheet) {
+    sheet = true;
+    const st = document.createElement('style');
+    st.textContent = `.cork-tile { background-image: ${tileURL()}; }`;
+    document.head.append(st);
+  }
+  el.classList.add('cork-tile');
+}
+
 // Поставить пробку фоном элемента; cam сдвигает и масштабирует её вместе с полем
 export function corkOn(el, cam) {
-  if (!el.style.backgroundImage) el.style.backgroundImage = tileURL();
+  useTile(el);
   if (!cam) return;
   const s = Math.max(0.5, cam.s) * 192;
   el.style.backgroundSize = `${s}px ${s}px`;
@@ -50,18 +63,24 @@ export function corkOn(el, cam) {
 // Плитка растрируется под масштаб t0; пока масштаб меняется, слой просто растягивается,
 // а когда масштаб успокоился, плитка пересобирается под новый размер.
 let rebuild = 0;
+// размер окна запоминаем по событию: чтение innerWidth на каждом кадре заставляет браузер
+// тут же пересчитать стили и раскладку
+export const view = { w: innerWidth, h: innerHeight };
+addEventListener('resize', () => { view.w = innerWidth; view.h = innerHeight; });
 export function corkLayer(el, cam) {
-  if (!el.style.backgroundImage) el.style.backgroundImage = tileURL();
+  useTile(el);
   const t = Math.max(0.5, cam.s) * 192;
-  const vp = `${innerWidth}x${innerHeight}`;
+  const vp = `${view.w}x${view.h}`;
   let ratio = el._t0 ? t / el._t0 : 0;
   if (!el._t0 || el._vp !== vp || ratio < 0.5 || ratio > 2) {
     setBase(el, t, vp);
     ratio = 1;
-  } else if (ratio !== 1) {
+  } else if (ratio < 0.8 || ratio > 1.25) {
+    // пересборка перерисовывает весь большой слой; немного растянутая пробка незаметна,
+    // поэтому пересобираем только при заметной разнице и только когда масштаб успокоился
     clearTimeout(rebuild);
     rebuild = setTimeout(() => { setBase(el, t, vp); place(el, cam, t, 1); }, 250);
-  }
+  } else clearTimeout(rebuild);
   place(el, cam, t, ratio);
 }
 
@@ -71,8 +90,8 @@ function setBase(el, t, vp) {
   el.style.transformOrigin = '0 0';
   el.style.backgroundSize = `${t}px ${t}px`;
   // с запасом: при растяжении до двух раз слой всё равно закрывает экран
-  el.style.width = innerWidth * 2 + 2 * t + 'px';
-  el.style.height = innerHeight * 2 + 2 * t + 'px';
+  el.style.width = view.w * 2 + 2 * t + 'px';
+  el.style.height = view.h * 2 + 2 * t + 'px';
 }
 
 function place(el, cam, t, ratio) {

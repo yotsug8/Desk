@@ -6,7 +6,7 @@ import { merge3, mapCaret } from './merge.js';
 import { toast, esc, openModal, copyText } from './ui.js';
 import { connectLive } from './live.js';
 import { initHistory } from './history.js';
-import { corkLayer } from './cork.js';
+import { view, corkLayer } from './cork.js';
 import { initExtras, openFind, closeFind, findOpen, refreshFind, drawMinimap, exportDialog } from './extras.js';
 import { canInstall, installApp } from './pwa.js';
 import { initClip, duplicateSel } from './clip.js';
@@ -776,16 +776,21 @@ function flushCamera() {
   const world = $('world');
   world.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   if (s !== lastScale) {
+    const first = !lastScale;
     lastScale = s;
-    world.style.setProperty('--inv', 1 / s);
     const pct = $('zoom').querySelector('.pct');
     if (pct) pct.textContent = Math.round(s * 100) + '%';
-    // после смены масштаба один раз перерисовать слой, чтобы текст снова стал чётким
+    // --inv (размер подписей и ярлычков) меняем, только когда масштаб успокоился:
+    // эта переменная наследуется всеми элементами доски, и смена на каждом кадре
+    // заставляла браузер пересчитывать стили всей доски прямо во время щипка
+    if (first) world.style.setProperty('--inv', 1 / s);
     clearTimeout(sharpTimer);
     sharpTimer = setTimeout(() => {
+      world.style.setProperty('--inv', 1 / B.cam.s);
+      // и один раз перерисовать слой, чтобы текст снова стал чётким
       world.style.willChange = 'auto';
       requestAnimationFrame(() => { world.style.willChange = ''; });
-    }, 300);
+    }, 200);
   }
   corkLayer($('cork'), B.cam);
   // курсоры гостей едут вместе с доской без запаздывания
@@ -794,7 +799,7 @@ function flushCamera() {
   camIdle = setTimeout(() => $('cursors').classList.remove('cam'), 150);
   for (const c of cursors.values()) placeCursor(c);
   if (!$('seltools').hidden) placeSelTools();
-  const c = toWorld(innerWidth / 2, innerHeight / 2);
+  const c = toWorld(view.w / 2, view.h / 2);
   B.live?.viewport(c.x, c.y, s);
   drawMinimap();
 }
@@ -831,6 +836,30 @@ function flyTo(x, y, s, ms) {
     B.cam = { s: from.s + (to.s - from.s) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e };
     flushCamera();
     if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// Докатывание после броска: скорость по последним 100 мс движения, потом трение
+function glide(trail, now) {
+  const recent = trail.filter(([t]) => now - t < 100);
+  if (recent.length < 2) return;
+  const [t0, x0, y0] = recent[0], [t1, x1, y1] = recent[recent.length - 1];
+  const dt = Math.max(1, t1 - t0);
+  let vx = (x1 - x0) / dt, vy = (y1 - y0) / dt; // пикселей в миллисекунду
+  if (Math.hypot(vx, vy) < 0.3 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const id = ++flight;
+  let last = performance.now();
+  const step = (t) => {
+    if (id !== flight) return;
+    const ms = Math.min(32, t - last);
+    last = t;
+    B.cam.x += vx * ms;
+    B.cam.y += vy * ms;
+    const k = Math.pow(0.995, ms); // трение
+    vx *= k; vy *= k;
+    flushCamera();
+    if (Math.hypot(vx, vy) > 0.02) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
 }
@@ -2038,6 +2067,7 @@ function bindInput() {
   let editEnd = false; // касание пальцем при открытой правке: закрыть её, если это не щипок
   stage.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
+    flight++; // касание останавливает докатывание и перелёт
     if (e.target.tagName === 'TEXTAREA') return;
     closeCtx();
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -2234,6 +2264,9 @@ function bindInput() {
       B.cam.x = g.cx + dx;
       B.cam.y = g.cy + dy;
       applyCamera();
+      // последние точки пальца: по ним скорость для докатывания
+      (g.trail ||= []).push([e.timeStamp, e.clientX, e.clientY]);
+      if (g.trail.length > 6) g.trail.shift();
     } else if (g.mode === 'press' || g.mode === 'drag') {
       if (g.mode === 'press') {
         g.mode = 'drag';
@@ -2299,12 +2332,16 @@ function bindInput() {
     }
     if (g?.mode === 'tick' && !g.moved) toggleItem(g.id, g.li);
     if (g?.mode === 'vote' && !g.moved) voteToggle(g.id);
+    // двойное касание это два касания подряд: перенос или сдвиг между ними его сбрасывает
+    if (!(g?.mode === 'press' && !g.moved)) lastTap = {};
     if (g?.mode === 'press' && !g.moved) {
       // касание по элементу: второй раз подряд открывает правку
       const now = Date.now();
       if ((g.wasSel && !e.shiftKey && B.sel.size === 1) || (lastTap.id === g.id && now - lastTap.t < 400)) startEdit(g.id);
       lastTap = { id: g.id, t: now };
     }
+    // бросок пальцем: доска плавно докатывается и останавливается
+    if (g?.mode === 'pan' && g.moved && e.pointerType === 'touch' && g.trail?.length > 1 && !B.editing) glide(g.trail, e.timeStamp);
     if (g?.mode === 'pan' && !g.moved && g.empty) {
       finishEdit();
       setSelection([]);
@@ -2364,10 +2401,16 @@ function bindInput() {
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
     manualCamera();
-    if (e.ctrlKey || e.metaKey) zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
-    else {
-      B.cam.x -= e.deltaX;
-      B.cam.y -= e.deltaY;
+    // Firefox считает колесо строками и страницами, остальные пикселями
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1;
+    const dx = e.deltaX * unit, dy = e.deltaY * unit;
+    if (e.ctrlKey || e.metaKey) {
+      // щипок на тачпаде даёт мелкие шаги, колесо мыши крупные: одно деление колеса = 15%
+      const k = Math.abs(dy) >= 50 ? (dy > 0 ? 1 / 1.15 : 1.15) : Math.exp(-dy * 0.01);
+      zoomAt(e.clientX, e.clientY, k);
+    } else {
+      B.cam.x -= dx;
+      B.cam.y -= dy;
       applyCamera();
     }
   }, { passive: false });
