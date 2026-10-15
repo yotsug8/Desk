@@ -114,6 +114,9 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .strings path.sh { fill: none; stroke: #0000002a; stroke-width: 2; }
 .strings path.hit { fill: none; stroke: transparent; stroke-width: 18; pointer-events: stroke; cursor: pointer; }
 .strings .sel path.s { stroke-dasharray: 7 5; }
+/* направляющие при переносе: тонкие линии поверх всего, толщина не зависит от масштаба */
+.guides { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 900001; }
+.guides line { stroke: #d93b25; stroke-width: 2; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
 .cursors { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
 
 /* Верхняя строка: слева ярлык доски, справа люди и действия */

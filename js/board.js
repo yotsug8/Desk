@@ -349,7 +349,7 @@ function keysDialog() {
   const rows = [
     ['N', 'заметка'], ['K', 'список'], ['T', 'текст'], ['D', 'рисунок'], ['L', 'связь'], ['F', 'область'], ['P', 'фото'],
     ['Delete', 'удалить выделенное'], ['Enter', 'править выделенное'], ['Esc', 'отмена'],
-    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Shift + протянуть', 'выделить рамкой'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + Z', 'отменить'], ['Ctrl + Shift + Z', 'повторить'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Правый клик', 'меню элемента'],
+    ['+  -  0', 'масштаб'], ['Shift + клик', 'выделить несколько'], ['Shift + протянуть', 'выделить рамкой'], ['Ctrl + A', 'выделить всё'], ['Ctrl + F', 'найти на доске'], ['Ctrl + Z', 'отменить'], ['Ctrl + Shift + Z', 'повторить'], ['Ctrl + C, V', 'копировать и вставить'], ['Ctrl + D', 'дублировать'], ['Стрелки', 'сдвинуть выделенное'], ['Alt + тянуть', 'без прилипания'], ['Правый клик', 'меню элемента'],
   ];
   const { root, close } = openModal(`
     <h3>Горячие клавиши</h3>
@@ -1114,6 +1114,65 @@ function reorder() {
   const layer = (id, n) => (n.classList.contains('frame') ? 0 : B.sel.has(id) ? 2 : 1);
   const list = [...B.nodes.entries()].sort((a, b) => layer(...a) - layer(...b) || Number(a[1].dataset.z) - Number(b[1].dataset.z));
   list.forEach(([, n], i) => { if (n.style.zIndex !== String(i + 1)) n.style.zIndex = i + 1; });
+}
+
+// ---------- Прилипание при переносе ----------
+
+// Края и центры: двигаемой группы (на старте) и соседей в кадре
+function snapSetup(start) {
+  const lines = (r, n) => {
+    const w = boxW(n, r.w), h = boxH(n, r.h);
+    return { x: [r.x, r.x + w / 2, r.x + w], y: [r.y, r.y + h / 2, r.y + h], y1: r.y, y2: r.y + h, x1: r.x, x2: r.x + w };
+  };
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const [id, p] of start) {
+    const r = B.els.get(id), n = B.nodes.get(id);
+    if (!r) continue;
+    const w = boxW(n, r.w), h = boxH(n, r.h);
+    x1 = Math.min(x1, p.x); y1 = Math.min(y1, p.y); x2 = Math.max(x2, p.x + w); y2 = Math.max(y2, p.y + h);
+  }
+  const box = { x: [x1, (x1 + x2) / 2, x2], y: [y1, (y1 + y2) / 2, y2], x1, x2, y1, y2 };
+  const others = [];
+  for (const [id, n] of B.nodes) {
+    if (start.has(id) || n._far) continue;
+    const r = viewOf(id);
+    if (!r || r.type === 'link' || r.type === 'draw') continue;
+    others.push(lines(r, n));
+    if (others.length > 400) break;
+  }
+  return { box, others };
+}
+
+// Сдвиг с прилипанием: ближайшая линия по каждой оси в пределах 6 точек экрана
+function snapMove(sn, mx, my) {
+  const thr = 6 / B.cam.s;
+  let bx = null, by = null;
+  for (const o of sn.others) {
+    for (const a of sn.box.x) for (const b of o.x) {
+      const d = b - (a + mx);
+      if (Math.abs(d) <= thr && (!bx || Math.abs(d) < Math.abs(bx.d))) bx = { d, at: b, o };
+    }
+    for (const a of sn.box.y) for (const b of o.y) {
+      const d = b - (a + my);
+      if (Math.abs(d) <= thr && (!by || Math.abs(d) < Math.abs(by.d))) by = { d, at: b, o };
+    }
+  }
+  if (bx) mx += bx.d;
+  if (by) my += by.d;
+  const guides = [];
+  // линия тянется от группы до соседа, к которому прилипли
+  if (bx) guides.push([bx.at, Math.min(sn.box.y1 + my, bx.o.y1), bx.at, Math.max(sn.box.y2 + my, bx.o.y2)]);
+  if (by) guides.push([Math.min(sn.box.x1 + mx, by.o.x1), by.at, Math.max(sn.box.x2 + mx, by.o.x2), by.at]);
+  drawGuides(guides);
+  return [mx, my];
+}
+
+let guidesKey = '';
+function drawGuides(list) {
+  const key = list.map((l) => l.map(Math.round).join()).join(';');
+  if (key === guidesKey) return;
+  guidesKey = key;
+  $('guides').innerHTML = list.map(([a, b, c, d]) => `<line x1="${a}" y1="${b}" x2="${c}" y2="${d}"/>`).join('');
 }
 
 // ---------- Нитки ----------
@@ -2341,12 +2400,17 @@ function bindInput() {
         for (const id of g.start.keys()) { B.myDrag.add(id); B.lifting.add(id); B.nodes.get(id)?.classList.add('lift'); }
         B.live.hold([...g.start.keys()], 'move');
       }
+      // прилипание к краям и центрам соседей; Alt отключает
+      let mx = dx / B.cam.s, my = dy / B.cam.s;
+      if (!g.snap) g.snap = snapSetup(g.start);
+      if (!e.altKey) [mx, my] = snapMove(g.snap, mx, my);
+      else drawGuides([]);
       const items = [];
       for (const [id, p] of g.start) {
         const r = B.els.get(id);
         if (!r) continue;
-        r.x = Math.round(p.x + dx / B.cam.s);
-        r.y = Math.round(p.y + dy / B.cam.s);
+        r.x = Math.round(p.x + mx);
+        r.y = Math.round(p.y + my);
         moveNode(id);
         items.push([id, r.x, r.y, r.w, r.h]);
       }
@@ -2422,6 +2486,7 @@ function bindInput() {
 
   function endGesture(cancel) {
     stage.classList.remove('panning');
+    drawGuides([]);
     $('boxsel')?.remove();
     if (!g) return;
     const cur = g;
