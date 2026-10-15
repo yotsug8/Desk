@@ -769,7 +769,11 @@ function applyCamera() {
   requestAnimationFrame(flushCamera);
 }
 
-let lastScale = 0, sharpTimer = 0, camIdle = 0;
+let lastScale = 0, sharpTimer = 0, camIdle = 0, invNow = 1;
+function applyInv() {
+  invNow = 1 / B.cam.s;
+  for (const n of $('world').querySelectorAll('.tag, .ftitle')) n.style.setProperty('--inv', invNow);
+}
 function flushCamera() {
   camQueued = false;
   const { x, y, s } = B.cam;
@@ -780,19 +784,20 @@ function flushCamera() {
     lastScale = s;
     const pct = $('zoom').querySelector('.pct');
     if (pct) pct.textContent = Math.round(s * 100) + '%';
-    // --inv (размер подписей и ярлычков) меняем, только когда масштаб успокоился:
-    // эта переменная наследуется всеми элементами доски, и смена на каждом кадре
-    // заставляла браузер пересчитывать стили всей доски прямо во время щипка
-    if (first) world.style.setProperty('--inv', 1 / s);
+    // --inv (размер подписей и ярлычков) меняем, только когда масштаб успокоился,
+    // и ставим прямо на ярлычки и подписи областей: если поставить на всю доску,
+    // браузер пересчитывает стили каждого элемента
+    if (first) applyInv();
     clearTimeout(sharpTimer);
     sharpTimer = setTimeout(() => {
-      world.style.setProperty('--inv', 1 / B.cam.s);
+      applyInv();
       // и один раз перерисовать слой, чтобы текст снова стал чётким
       world.style.willChange = 'auto';
       requestAnimationFrame(() => { world.style.willChange = ''; });
     }, 200);
   }
   corkLayer($('cork'), B.cam);
+  cull();
   // курсоры гостей едут вместе с доской без запаздывания
   $('cursors').classList.add('cam');
   clearTimeout(camIdle);
@@ -802,6 +807,30 @@ function flushCamera() {
   const c = toWorld(view.w / 2, view.h / 2);
   B.live?.viewport(c.x, c.y, s);
   drawMinimap();
+}
+
+// Элементы далеко за краем экрана прячем (visibility: hidden): браузер не держит их
+// в отрисовке, и каждый кадр сдвига и щипка обходится в разы дешевле на большой доске.
+// Прячем с запасом в экран с каждой стороны и пересчитываем в том же кадре, как только
+// видимая часть вышла за посчитанную область, поэтому при быстром движении ничего не мигает.
+let culled = null; // область мира, для которой элементы расставлены
+function cull(force) {
+  const { x, y, s } = B.cam;
+  const vx = -x / s, vy = -y / s, vw = view.w / s, vh = view.h / s;
+  if (!force && culled && vx >= culled.x1 && vy >= culled.y1 && vx + vw <= culled.x2 && vy + vh <= culled.y2) return;
+  const m = Math.max(vw, vh);
+  culled = { x1: vx - m, y1: vy - m, x2: vx + vw + m, y2: vy + vh + m };
+  for (const id of B.nodes.keys()) cullOne(id);
+}
+
+function cullOne(id) {
+  const node = B.nodes.get(id);
+  if (!node || !culled) return;
+  const r = viewOf(id);
+  // нужные сейчас не прячем никогда
+  const keep = !r || B.sel.has(id) || B.editing?.id === id || B.myDrag.has(id);
+  const far = !keep && (r.x > culled.x2 || r.y > culled.y2 || r.x + r.w * 2 < culled.x1 || r.y + r.h * 2 < culled.y1);
+  if (node._far !== far) { node._far = far; node.classList.toggle('far', far); }
 }
 
 function toWorld(sx, sy) {
@@ -894,7 +923,13 @@ function renderAll() {
   queueStrings();
 }
 
+// элемент мог уехать в кадр или из кадра: заодно решаем, прятать ли его
 function renderEl(id) {
+  renderElNow(id);
+  cullOne(id);
+}
+
+function renderElNow(id) {
   const v = viewOf(id);
   let node = B.nodes.get(id);
   queueStrings();
@@ -926,6 +961,8 @@ function renderEl(id) {
     node = document.createElement('div');
     node.dataset.id = id;
     node.innerHTML = SKELETON[v.type] || '<div class="body"></div>';
+    sizes.observe(node);
+    node.querySelector('.ftitle')?.style.setProperty('--inv', invNow);
     B.nodes.set(id, node);
     $('world').append(node);
     node.style.zIndex = 1e6;
@@ -1010,6 +1047,7 @@ function renderEl(id) {
     if (!tag) { tag = document.createElement('div'); tag.className = 'tag'; node.append(tag); }
     tag.textContent = `${hold.name} ${hold.mode === 'edit' ? 'пишет' : 'двигает'}`;
     tag.style.transform = 'scale(var(--inv))';
+    tag.style.setProperty('--inv', invNow);
   } else if (tag) tag.remove();
 
   renderVotes(id);
@@ -1080,13 +1118,38 @@ function reorder() {
 
 // ---------- Нитки ----------
 
+// Размеры узлов присылает браузер сам, когда они меняются: читать offsetWidth на каждом
+// кадре переноса значит заставлять его заново раскладывать страницу
+const sizes = new ResizeObserver((list) => {
+  for (const e of list) {
+    const b = e.borderBoxSize?.[0];
+    e.target._w = b ? b.inlineSize : e.target.offsetWidth;
+    e.target._h = b ? b.blockSize : e.target.offsetHeight;
+  }
+  queueStrings();
+  placeSelTools();
+});
+// видимая часть экрана: чтение visualViewport тоже заставляет браузер раскладывать страницу,
+// поэтому запоминаем её по событиям
+const vis = { top: 0, h: innerHeight };
+function readVis() {
+  const vv = window.visualViewport;
+  vis.top = vv ? vv.offsetTop : 0;
+  vis.h = vv ? vv.height : innerHeight;
+}
+window.visualViewport?.addEventListener('resize', readVis);
+window.visualViewport?.addEventListener('scroll', readVis);
+addEventListener('resize', readVis);
+const boxW = (n, def) => n?._w ?? def;
+const boxH = (n, def) => n?._h ?? def;
+
 // Куда крепится нитка: к кнопке заметки или к середине надписи, с учётом наклона
 function anchor(id) {
   const v = viewOf(id);
   if (!v || v.type === 'link') return null;
   const node = B.nodes.get(id);
-  const w = v.type === 'note' || v.type === 'draw' ? v.w : node?.offsetWidth || v.w;
-  const h = v.type === 'note' || v.type === 'draw' ? v.h : node?.offsetHeight || v.h;
+  const w = v.type === 'note' || v.type === 'draw' ? v.w : boxW(node, v.w) || v.w;
+  const h = v.type === 'note' || v.type === 'draw' ? v.h : boxH(node, v.h) || v.h;
   const cx = v.x + w / 2, cy = v.y + h / 2;
   if (!['note', 'list', 'image'].includes(v.type)) return { x: cx, y: cy };
   const a = (Number(tilt(id)) * Math.PI) / 180;
@@ -1854,7 +1917,7 @@ function placeSelToolsNow(force) {
       if (a === 'smaller') setSize(0.8);
     };
   }
-  box.hidden = false;
+  if (box.hidden) box.hidden = false;
   // над выделением, по центру
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
   for (const r of rows) {
@@ -1865,24 +1928,26 @@ function placeSelToolsNow(force) {
       continue;
     }
     const n = B.nodes.get(r.id);
-    const w = n ? n.offsetWidth : r.w, h = n ? n.offsetHeight : r.h;
+    const w = boxW(n, r.w), h = boxH(n, r.h);
     x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y); x2 = Math.max(x2, r.x + w); y2 = Math.max(y2, r.y + h);
   }
   if (x1 === Infinity) { box.hidden = true; return; }
   const { x, y, s } = B.cam;
-  const bw = box.offsetWidth, bh = box.offsetHeight;
-  const vv = window.visualViewport;
-  const vTop = vv ? vv.offsetTop : 0, vH = vv ? vv.height : innerHeight;
+  if (!box._seen) { box._seen = true; sizes.observe(box); sizes.observe($('ledge')); }
+  // только что показанная панель ещё не измерена: один раз меряем сами
+  const bw = box._w || box.offsetWidth, bh = box._h || box.offsetHeight;
+  const vTop = vis.top, vH = vis.h;
   const ledge = $('ledge');
   const minTop = vTop + 64;
-  const maxTop = vTop + vH - bh - 12 - (B.editing || ledge.hidden ? 0 : ledge.offsetHeight + 12);
+  const maxTop = vTop + vH - bh - 12 - (B.editing || ledge.hidden ? 0 : (ledge._h ?? ledge.offsetHeight) + 12);
   let left = (x1 + x2) / 2 * s + x - bw / 2;
   let top = y1 * s + y - bh - 24;
   if (top < minTop) top = y2 * s + y + 24;
-  left = Math.max(12, Math.min(innerWidth - bw - 12, left));
-  top = Math.max(minTop, Math.min(maxTop, top));
-  box.style.left = left + 'px';
-  box.style.top = top + 'px';
+  left = Math.round(Math.max(12, Math.min(view.w - bw - 12, left)));
+  top = Math.round(Math.max(minTop, Math.min(maxTop, top)));
+  // пишем в стиль только изменившееся: каждая запись заставляет браузер пересчитывать панель
+  if (box._l !== left) { box._l = left; box.style.left = left + 'px'; }
+  if (box._t !== top) { box._t = top; box.style.top = top + 'px'; }
 }
 
 function setSelection(ids) {
@@ -2262,7 +2327,8 @@ function bindInput() {
       if (key !== g.hitKey) { g.hitKey = key; setSelection(new Set([...g.keep, ...hit])); }
     } else if (g.mode === 'pan') {
       manualCamera();
-      stage.classList.add('panning');
+      // курсор «рука» наследуется всеми элементами, смена класса пересчитывает их стили: только для мыши
+      if (e.pointerType === 'mouse') stage.classList.add('panning');
       B.cam.x = g.cx + dx;
       B.cam.y = g.cy + dy;
       applyCamera();

@@ -142,8 +142,13 @@ export function drawMinimap() {
   requestAnimationFrame(paintMinimap);
 }
 
+// на узких экранах карта спрятана стилями: и рисовать её незачем
+const mmOff = matchMedia('(max-width: 760px), (max-height: 560px)');
+mmOff.addEventListener('change', () => drawMinimap());
+
 function paintMinimap() {
   mm.queued = false;
+  if (mmOff.matches) return;
   const list = rows().filter((r) => r.type !== 'link');
   const show = list.length > 0;
   mm.box.hidden = !show;

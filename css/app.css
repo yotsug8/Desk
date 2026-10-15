@@ -107,6 +107,8 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .stage.tool-note, .stage.tool-text, .stage.tool-list, .stage.tool-draw, .stage.tool-frame { cursor: crosshair; }
 .stage.tool-link { cursor: alias; }
 .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+/* далеко за краем экрана: не рисуется, но размеры и место сохраняются (нитки считают от них) */
+.el.far { visibility: hidden; }
 .strings { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; z-index: 900000; }
 .strings path.s { fill: none; stroke-width: 2; stroke-linecap: round; }
 .strings path.sh { fill: none; stroke: #0000002a; stroke-width: 2; }

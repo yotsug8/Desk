@@ -87,3 +87,28 @@ test('колесо мыши с Ctrl: одно деление меняет мас
   await page.keyboard.up('Control');
   await expect.poll(() => page.evaluate(() => window.__desk.cam.s)).toBeCloseTo(Math.min(4, s0 * 1.15), 3);
 });
+
+test('далёкие элементы прячутся, а в кадре всегда видны, даже после быстрого улёта и возврата', async ({ page }) => {
+  const { createBoard } = await import('./helpers.js');
+  await createBoard(page);
+  await page.evaluate(async () => {
+    const sb = window.__deskApi.sb, id = window.__desk.id;
+    await Promise.all([0, 1, 2].map((i) => sb.rpc('el_create', { p_board: id, p_type: 'note', p_x: i * 6000, p_y: 0, p_w: 200, p_h: 170, p_data: { text: 'Далеко ' + i, color: 'yellow' } })));
+  });
+  await expect(page.locator('.el.note', { hasText: 'Далеко 2' })).toHaveCount(1);
+  // в кадре всё, что видно, не спрятано
+  const hiddenInView = () => page.evaluate(() => [...document.querySelectorAll('.el')].filter((n) => {
+    const r = n.getBoundingClientRect();
+    return r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight && getComputedStyle(n).visibility === 'hidden';
+  }).length);
+  expect(await hiddenInView()).toBe(0);
+  expect(await page.locator('.el.note.far').count()).toBeGreaterThan(0);
+  // улетаем к далёкой заметке колесом и возвращаемся
+  await page.mouse.move(600, 400);
+  for (let i = 0; i < 30; i++) await page.mouse.wheel(400, 0);
+  await page.waitForTimeout(200);
+  expect(await hiddenInView()).toBe(0);
+  for (let i = 0; i < 30; i++) await page.mouse.wheel(-400, 0);
+  await page.waitForTimeout(200);
+  expect(await hiddenInView()).toBe(0);
+});
