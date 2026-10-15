@@ -145,3 +145,43 @@ test('клавиатура уезжает: нижняя панель появл�
   expect(await ledge()).toEqual(final);
   await ctx.close();
 });
+test('панель цветов не мигает, когда начинаешь правку и выезжает клавиатура', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.bigbtn');
+  await page.locator('#ledge').waitFor();
+  await page.waitForTimeout(800);
+  const close = page.locator('[data-close]'); if (await close.count()) await close.first().click();
+  await page.locator('.tool[data-tool=note]').click();
+  await page.mouse.click(195, 300);
+  await expect(page.locator('body.editing')).toHaveCount(1);
+  await page.touchscreen.tap(40, 200);
+  await expect(page.locator('body.editing')).toHaveCount(0);
+  await page.waitForTimeout(500);
+  const note = page.locator('.el.note').first();
+  const b = await note.boundingBox();
+  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); // выбрать
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    window.__log = [];
+    const t0 = performance.now();
+    const tick = () => {
+      const s = document.getElementById('seltools'); const cs = getComputedStyle(s);
+      const st = s.hidden ? 'hidden' : cs.opacity === '0' ? 'op0' : 'shown@' + Math.round(s.getBoundingClientRect().top);
+      const last = window.__log[window.__log.length - 1];
+      if (!last || last[1] !== st) window.__log.push([Math.round(performance.now() - t0), st, document.body.className]);
+      if (performance.now() - t0 < 2500) requestAnimationFrame(tick);
+    };
+    tick();
+  });
+  await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); // правка
+  await page.waitForTimeout(100);
+  await page.setViewportSize({ width: 390, height: 500 }); // клавиатура
+  await page.waitForTimeout(2500);
+  const log = await page.evaluate(() => window.__log);
+  expect(log.map((l) => l[1])).toEqual([log[0][1]]);
+  expect(log[0][1]).toMatch(/^shown/);
+  await ctx.close();
+});

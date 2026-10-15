@@ -340,8 +340,6 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
   .ledge, .corner { transition: opacity .2s, visibility .2s; }
   body.editing .ledge, body.editing .corner, body.kb .ledge, body.kb .corner,
   body.vv-moving .ledge, body.vv-moving .corner { opacity: 0; visibility: hidden; pointer-events: none; transition: none; }
-  .seltools { transition: opacity .15s; }
-  body.vv-moving .seltools { opacity: 0; transition: none; }
   .el .grip { width: 18px; height: 18px; right: -10px; bottom: -10px; }
 }
 /* Большие экраны: всё чуть крупнее */
