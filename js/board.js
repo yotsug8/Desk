@@ -842,12 +842,14 @@ function flyTo(x, y, s, ms) {
 
 // Докатывание после броска: скорость по последним 100 мс движения, потом трение
 function glide(trail, now) {
-  const recent = trail.filter(([t]) => now - t < 100);
+  let recent = trail.filter(([t]) => now - t < 100);
+  // на медленном телефоне точки приходят реже: палец ещё двигался, если последняя свежая
+  if (recent.length < 2 && trail.length > 1 && now - trail[trail.length - 1][0] < 80) recent = trail.slice(-2);
   if (recent.length < 2) return;
   const [t0, x0, y0] = recent[0], [t1, x1, y1] = recent[recent.length - 1];
   const dt = Math.max(1, t1 - t0);
   let vx = (x1 - x0) / dt, vy = (y1 - y0) / dt; // пикселей в миллисекунду
-  if (Math.hypot(vx, vy) < 0.3 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (Math.hypot(vx, vy) < 0.15 || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const id = ++flight;
   let last = performance.now();
   const step = (t) => {

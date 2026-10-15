@@ -209,3 +209,28 @@ test('бросок пальцем: доска докатывается и ост
   expect(await camX()).toBe(after); // и остановилась
   await ctx.close();
 });
+
+test('бросок пальцем на медленном телефоне тоже докатывается', async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.fill('#name', 'Аня');
+  await page.click('.tpl:has([value=empty])');
+  await page.click('.bigbtn');
+  await page.locator('#ledge').waitFor();
+  await page.waitForTimeout(800);
+  const close = page.locator('[data-close]'); if (await close.count()) await close.first().click();
+  const camX = () => page.evaluate(() => window.__desk.cam.x);
+  const cdp = await ctx.newCDPSession(page);
+  const tp = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
+  await tp('touchStart', [[40, 500]]);
+  for (let i = 1; i <= 6; i++) { await page.waitForTimeout(110); await tp('touchMove', [[40 + i * 40, 500]]); }
+  await tp('touchEnd', []);
+  const atRelease = await camX();
+  await page.waitForTimeout(1500);
+  const after = await camX();
+  expect(after).toBeGreaterThan(atRelease + 30); // докатилась дальше
+  await page.waitForTimeout(500);
+  expect(await camX()).toBe(after); // и остановилась
+  await ctx.close();
+});
