@@ -198,8 +198,8 @@ test('бросок пальцем: доска докатывается и ост
   const camX = () => page.evaluate(() => window.__desk.cam.x);
   const cdp = await ctx.newCDPSession(page);
   const tp = (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y], i) => ({ x, y, id: i })) });
-  await tp('touchStart', [[100, 500]]);
-  for (let i = 1; i <= 8; i++) { await tp('touchMove', [[100 + i * 20, 500]]); await page.waitForTimeout(8); }
+  await tp('touchStart', [[60, 500]]);
+  for (let i = 1; i <= 8; i++) await tp('touchMove', [[60 + i * 35, 500]]); // быстрый бросок без пауз
   await tp('touchEnd', []);
   const atRelease = await camX();
   await page.waitForTimeout(1500);
