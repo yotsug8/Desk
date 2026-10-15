@@ -159,6 +159,9 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .zoom .pct:hover { background: #0000000c; }
 /* ---------- Элементы ---------- */
 .el { position: absolute; }
+/* ссылки в тексте: цвет текста, подчёркнуты, длинный адрес переносится */
+.el .body a { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; word-break: break-all; cursor: pointer; }
+.el .body a:hover { text-decoration-thickness: 2px; }
 .el .body { width: 100%; height: 100%; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; }
 .el.note { padding: 18px 14px 14px; font-size: 15px; line-height: 1.4; border-radius: 3px; box-shadow: 0 1px 2px #0000002a, 0 4px 10px #00000026; transform: rotate(var(--rot, 0deg)); }
 .el.note.c-yellow { background: var(--note-yellow); }

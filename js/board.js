@@ -1016,7 +1016,10 @@ function renderElNow(id) {
     body.dataset.ph = PLACEHOLDER[t] || '';
     if (!editing) {
       if (t === 'list') renderList(body, v.data.text || '');
-      else if (body.textContent !== (v.data.text || '')) body.textContent = v.data.text || '';
+      else if (body._text !== (v.data.text || '')) {
+        body._text = v.data.text || '';
+        body.innerHTML = linkify(body._text);
+      }
     }
   }
 
@@ -1064,13 +1067,26 @@ const DEFAULT_COLOR = { note: 'yellow', text: 'ink', list: 'white', draw: 'white
 const PLACEHOLDER = { note: 'пустая заметка', text: 'надпись', list: 'список', image: 'подпись', frame: 'область' };
 
 // Список: строки «[ ] дело» и «[x] дело» становятся галочками, остальные заголовками
+// Адреса сайтов в тексте становятся ссылками (только http и https), всё остальное экранируется
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,;:!?)\]}»]/gi;
+function linkify(text) {
+  let out = '', last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    const url = m[0];
+    const href = /^www\./i.test(url) ? 'https://' + url : url;
+    out += esc(text.slice(last, m.index)) + `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer nofollow ugc" draggable="false">${esc(url)}</a>`;
+    last = m.index + url.length;
+  }
+  return out + esc(text.slice(last));
+}
+
 function renderList(body, text) {
   if (body._text === text) return;
   body._text = text;
   body.innerHTML = text.split('\n').map((line, i) => {
     const m = line.match(/^\[( |x)\] ?(.*)$/);
-    if (!m) return line.trim() ? `<div class="lh">${esc(line)}</div>` : '';
-    return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${esc(m[2]) || '&nbsp;'}</span></div>`;
+    if (!m) return line.trim() ? `<div class="lh">${linkify(line)}</div>` : '';
+    return `<div class="li${m[1] === 'x' ? ' done' : ''}"><i class="box" data-li="${i}"></i><span>${linkify(m[2]) || '&nbsp;'}</span></div>`;
   }).join('');
 }
 
@@ -2244,9 +2260,17 @@ function bindInput() {
   const twoFingersInEdit = () => B.editing && fingers.size > 1;
 
   let editEnd = false; // касание пальцем при открытой правке: закрыть её, если это не щипок
+  // ссылка в заметке открывается простым нажатием, но не после переноса или сдвига
+  let gestureMoved = false;
+  stage.addEventListener('click', (e) => {
+    const a = e.target.closest('a');
+    if (a && (gestureMoved || B.tool || B.editing)) e.preventDefault();
+  }, true);
+
   stage.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
     flight++; // касание останавливает докатывание и перелёт
+    gestureMoved = false;
     if (e.target.tagName === 'TEXTAREA') return;
     closeCtx();
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -2352,7 +2376,14 @@ function bindInput() {
         g = { mode: 'resize', id, sx: e.clientX, sy: e.clientY, w0: r.w, h0: r.h, moved: false };
         return;
       }
-      if (!mayTouch(B.els.get(id))) { setSelection([id]); g = null; return; }
+      // чужое трогать нельзя: выделяем, а палец двигает доску; ссылка в нём открывается
+      const link = e.target.closest('a')?.href;
+      if (!canTouch(B.els.get(id))) {
+        if (!link) mayTouch(B.els.get(id));
+        setSelection([id]);
+        g = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: B.cam.x, cy: B.cam.y, moved: false, empty: false, link };
+        return;
+      }
       const wasSel = B.sel.has(id);
       if (e.shiftKey) {
         const s = new Set(B.sel);
@@ -2364,7 +2395,7 @@ function bindInput() {
       const skip = all.find((r) => !canTouch(r));
       if (skip) mayTouch(skip);
       const start = new Map(all.filter(canTouch).map((r) => [r.id, { x: r.x, y: r.y }]));
-      g = { mode: 'press', id, wasSel, sx: e.clientX, sy: e.clientY, start, moved: false };
+      g = { mode: 'press', id, wasSel, sx: e.clientX, sy: e.clientY, start, moved: false, link: e.target.closest('a')?.href };
       return;
     }
 
@@ -2376,7 +2407,7 @@ function bindInput() {
     }
 
     if (!panBtn && id && !canEdit()) setSelection([]);
-    g = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: B.cam.x, cy: B.cam.y, moved: false, empty: !t };
+    g = { mode: 'pan', sx: e.clientX, sy: e.clientY, cx: B.cam.x, cy: B.cam.y, moved: false, empty: !t, link: e.target.closest('a')?.href };
   });
 
   stage.addEventListener('pointermove', (e) => {
@@ -2416,6 +2447,7 @@ function bindInput() {
     if (!g.moved && Math.hypot(dx, dy) < 6) return;
     editEnd = false; // это сдвиг, а не касание: правку не закрываем
     g.moved = true;
+    gestureMoved = true;
     clearTimeout(longPress);
 
     if (g.mode === 'tick' || g.mode === 'vote') g = { mode: 'pan', sx: g.sx, sy: g.sy, cx: B.cam.x - dx, cy: B.cam.y - dy, moved: true, empty: false };
@@ -2519,6 +2551,13 @@ function bindInput() {
     if (g?.mode === 'vote' && !g.moved) voteToggle(g.id);
     // двойное касание это два касания подряд: перенос или сдвиг между ними его сбрасывает
     if (!(g?.mode === 'press' && !g.moved)) lastTap = {};
+    // нажатие по ссылке без движения открывает её (указатель захвачен доской, сам щелчок до ссылки не дойдёт)
+    if ((g?.mode === 'press' || g?.mode === 'pan') && !g.moved && g.link && !e.shiftKey) {
+      window.open(g.link, '_blank', 'noopener,noreferrer');
+      lastTap = {};
+      endGesture(false);
+      return;
+    }
     if (g?.mode === 'press' && !g.moved) {
       // касание по элементу: второй раз подряд открывает правку
       const now = Date.now();
