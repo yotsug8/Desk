@@ -101,8 +101,8 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .gate .err { color: var(--red); margin-top: 10px; }
 
 /* ---------- Доска ---------- */
-.app { position: fixed; inset: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; background-color: var(--cork); }
-.stage { position: absolute; inset: 0; }
+.app { position: fixed; inset: 0; overflow: hidden; overflow: clip; touch-action: none; user-select: none; -webkit-user-select: none; background-color: var(--cork); }
+.stage { position: absolute; inset: 0; overflow: clip; }
 .stage.panning { cursor: grabbing; }
 .stage.tool-note, .stage.tool-text, .stage.tool-list, .stage.tool-draw, .stage.tool-frame { cursor: crosshair; }
 .stage.tool-link { cursor: alias; }

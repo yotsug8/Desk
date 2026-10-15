@@ -39,3 +39,37 @@ test('перенос: заметка прилипает к краю соседк
   expect((await rowOf(page, 'Два')).x).toBe(a.x + 43);
   await expect(page.locator('#guides line')).toHaveCount(0);
 });
+
+test('выделенное выстраивается в ряд и в столбец с ровными промежутками, Ctrl+Z возвращает', async ({ page }) => {
+  await createBoard(page);
+  await addNote(page, 250, 250, 'Раз');
+  await addNote(page, 620, 420, 'Два');
+  await addNote(page, 900, 200, 'Три');
+  const all = async () => Promise.all(['Раз', 'Два', 'Три'].map((t) => rowOf(page, t)));
+  const before = await all();
+  await notes(page).filter({ hasText: 'Раз' }).click();
+  await notes(page).filter({ hasText: 'Два' }).click({ modifiers: ['Shift'] });
+  await notes(page).filter({ hasText: 'Три' }).click({ modifiers: ['Shift'] });
+  await page.click('#seltools [data-act=row]');
+  await waitSaved(page);
+  // экран не съезжает: контейнер доски не прокручивается
+  expect(await page.evaluate(() => document.getElementById('app').scrollLeft + document.getElementById('app').scrollTop)).toBe(0);
+  let [a, b, c] = await all();
+  const w = await page.evaluate(() => [...window.__desk.els.values()].find((e) => e.data.text === 'Раз').w);
+  expect([a.y, b.y, c.y]).toEqual([a.y, a.y, a.y]);
+  expect(b.x - a.x).toBe(w + 24);
+  expect(c.x - b.x).toBe(w + 24);
+
+  await page.click('#seltools [data-act=column]');
+  await waitSaved(page);
+  [a, b, c] = await all();
+  expect([a.x, b.x, c.x]).toEqual([a.x, a.x, a.x]);
+  expect(b.y).toBeGreaterThan(a.y);
+  expect(c.y).toBeGreaterThan(b.y);
+
+  // две отмены возвращают как было
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(450);
+  await page.keyboard.press('Control+z');
+  await expect.poll(all).toEqual(before);
+});

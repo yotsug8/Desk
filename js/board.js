@@ -1546,7 +1546,7 @@ function withContents(ids) {
     for (const r of B.els.values()) {
       if (r.deleted_at || r.type === 'link' || r.type === 'frame' || out.has(r.id) || !canTouch(r)) continue;
       const n = B.nodes.get(r.id);
-      const cx = r.x + (n?.offsetWidth || r.w) / 2, cy = r.y + (n?.offsetHeight || r.h) / 2;
+      const cx = r.x + boxW(n, r.w) / 2, cy = r.y + boxH(n, r.h) / 2;
       if (cx > f.x && cx < f.x + f.w && cy > f.y && cy < f.y + f.h) out.add(r.id);
     }
   }
@@ -1642,6 +1642,57 @@ function flushNudge() {
       else toast(err.message, true);
     })
     .finally(() => ids.forEach((id) => { B.myDrag.delete(id); B.nodes.get(id)?.classList.remove('lift'); }));
+}
+
+// Выстроить выделенное в ряд или в столбец с ровными промежутками.
+// Порядок как сейчас на доске; содержимое области едет вместе с ней.
+const GAP = 24;
+function arrange(dir) {
+  if (!canEdit() || B.past) return;
+  const all = [...B.sel].map((id) => B.els.get(id)).filter((r) => r && !r.deleted_at && r.type !== 'link');
+  const items = all.filter(canTouch);
+  if (items.length < all.length) mayTouch(all.find((r) => !canTouch(r)));
+  if (items.length < 2) return;
+  const size = (r) => [boxW(B.nodes.get(r.id), r.w), boxH(B.nodes.get(r.id), r.h)];
+  const row = dir === 'row';
+  items.sort((a, b) => (row ? a.x - b.x : a.y - b.y));
+  const x0 = Math.min(...items.map((r) => r.x)), y0 = Math.min(...items.map((r) => r.y));
+  // куда встаёт каждый и на сколько сдвигается
+  const shift = new Map();
+  let at = row ? x0 : y0;
+  for (const r of items) {
+    const [w, h] = size(r);
+    const nx = row ? at : x0, ny = row ? y0 : at;
+    shift.set(r.id, [nx - r.x, ny - r.y]);
+    at += (row ? w : h) + GAP;
+  }
+  // содержимое областей едет за своей областью
+  for (const r of items) {
+    if (r.type !== 'frame') continue;
+    for (const id of withContents(new Set([r.id]))) if (!shift.has(id)) shift.set(id, shift.get(r.id));
+  }
+  const ids = [...shift.keys()].filter((id) => { const [dx, dy] = shift.get(id); return dx || dy; });
+  if (!ids.length) return;
+  const before = snap(ids);
+  for (const id of ids) {
+    const r = B.els.get(id), [dx, dy] = shift.get(id);
+    r.x += dx; r.y += dy;
+    B.myDrag.add(id);
+    moveNode(id);
+  }
+  commit(before);
+  queueStrings();
+  placeSelTools();
+  const moves = ids.map((id) => { const r = B.els.get(id); return { id, x: r.x, y: r.y }; });
+  B.live.drag(ids.map((id) => { const r = B.els.get(id); return [id, r.x, r.y, r.w, r.h]; }));
+  call('el_move', { p_moves: moves })
+    .catch((err) => {
+      B.live.drag(ids.map((id) => { const r = before.get(id); return [id, r.x, r.y, r.w, r.h]; }));
+      resync();
+      if (err.code === 'mass_limit') askApproval('move', moves, moves.length);
+      else toast(err.message, true);
+    })
+    .finally(() => ids.forEach((id) => B.myDrag.delete(id)));
 }
 
 // Крупное действие с чужими элементами: предлагаем отправить на одобрение
@@ -1964,6 +2015,7 @@ function placeSelToolsNow(force) {
     box.innerHTML = [
       palette ? palette.map((c) => `<button class="sw${c === cur ? ' on' : ''}" data-color="${c}" style="background:${tone(c)}" aria-label="Цвет"></button>`).join('') + '<span class="vsep"></span>' : '',
       types.size === 1 && types.has('text') ? `<button class="t" data-act="smaller" title="Мельче">${icon('smaller')}</button><button class="t" data-act="bigger" title="Крупнее">${icon('bigger')}</button><span class="vsep"></span>` : '',
+      rows.filter((r) => r.type !== 'link').length > 1 ? `<button class="t" data-act="row" title="Выстроить в ряд" aria-label="В ряд">${icon('row')}</button><button class="t" data-act="column" title="Выстроить в столбец" aria-label="В столбец">${icon('column')}</button><span class="vsep"></span>` : '',
       `<button class="t danger" data-act="delete" title="Снять с доски" aria-label="Удалить">${icon('trash')}</button>`,
     ].join('');
     box.onpointerdown = (e) => e.preventDefault(); // не терять фокус редактора
@@ -1974,6 +2026,7 @@ function placeSelToolsNow(force) {
       if (a === 'delete') deleteSel();
       if (a === 'bigger') setSize(1.25);
       if (a === 'smaller') setSize(0.8);
+      if (a === 'row' || a === 'column') arrange(a);
     };
   }
   if (box.hidden) box.hidden = false;
@@ -2627,6 +2680,8 @@ function bindInput() {
   // при клавиатуре iOS прокручивает страницу, и верхняя панель уезжает: сразу возвращаем на место
   // и во время набора тоже: текст над клавиатурой держит сама доска (keepInView), а не прокрутка страницы
   addEventListener('scroll', () => { if (scrollX || scrollY) scrollTo(0, 0); }, { passive: true });
+  // контейнер доски тоже никогда не прокручивается (фокус на кнопке у края, старые браузеры без overflow: clip)
+  for (const el of [$('app'), $('stage')]) el.addEventListener('scroll', () => { if (el.scrollLeft || el.scrollTop) el.scrollLeft = el.scrollTop = 0; }, { passive: true });
   window.visualViewport?.addEventListener('resize', () => {
     if (!coarse()) return placeSelTools();
     document.body.classList.add('vv-moving');
