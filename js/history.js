@@ -56,6 +56,7 @@ export function initHistory(B, d) {
       case 'board': return 'Доска создана';
       case 'join': return 'Вход на доску';
       case 'rename': return `Новое название «${esc(a?.title)}»`;
+      case 'background': return `Новый фон: ${({ cork: 'пробка', grid: 'клетка', lines: 'линейка', plain: 'чистый лист' })[a?.bg] || 'другой'}`;
       case 'rollback': return n > 1 ? `Откат доски, изменений: ${n}` : 'Откат доски';
       case 'create': return a?.type === 'link' ? 'Связь между элементами' : a?.type === 'draw' ? 'Рисунок' : `Добавлено: ${kind(a)} ${esc(snip(a))}`;
       case 'delete': return n > 1 ? `Снято с доски: ${n}` : `Снято: ${esc(snip(b) || kind(b))}`;
@@ -191,6 +192,7 @@ export function initHistory(B, d) {
   // Новая или обновлённая (склеенная) запись истории
   function onRow(r) {
     if (r.action === 'rename' && r.after?.title) d.setTitle(r.after.title);
+    if (r.action === 'background' && r.after?.bg) d.setBg(r.after.bg);
     // панель ни разу не открывали: при открытии всё равно загрузим свежее
     if (!loaded && panel.hidden) return;
     const i = rows.findIndex((x) => x.id === r.id);

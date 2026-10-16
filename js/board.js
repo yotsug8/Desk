@@ -24,6 +24,35 @@ const DRAW_COLORS = ['white', 'ink', 'red', 'blue', 'yellow'];
 const LIST_COLORS = ['white', 'yellow', 'blue'];
 const FRAME_COLORS = ['white', 'yellow', 'green', 'blue', 'pink'];
 const DRAW = { white: '#fdf3df', ink: '#2a1f14', red: '#b3261e', blue: '#2f5d8a', yellow: '#f6d860' };
+// мел: светлый на пробке, тёмный на листе тетради (переменная --chalk меняется вместе с фоном)
+const drawColor = (c) => (!c || c === 'white' ? 'var(--chalk)' : DRAW[c] || 'var(--chalk)');
+
+// Фон доски общий для всех: пробка, клетка, линейка или чистый лист
+const BACKGROUNDS = [['cork', 'Пробка'], ['grid', 'Клетка'], ['lines', 'Линейка'], ['plain', 'Чистый лист']];
+function setBg(bg) {
+  B.bg = bg;
+  const app = $('app');
+  for (const [k] of BACKGROUNDS) app.classList.toggle('bg-' + k, k === bg && k !== 'cork');
+  buildPens?.();
+  drawMinimap();
+}
+
+function backgroundDialog() {
+  const { root, close } = openModal(`
+    <h3>Фон доски</h3>
+    <p>Меняется у всех участников.</p>
+    <div class="bgs">${BACKGROUNDS.map(([k, t]) => `<button class="bgo${B.bg === k ? ' on' : ''}" data-bg="${k}"><i class="cork-tile bg-${k}"></i><span>${t}</span></button>`).join('')}</div>
+    <div class="row"><button class="minibtn" data-close>Готово</button></div>`);
+  root.querySelector('[data-close]').onclick = close;
+  root.querySelector('.bgs').onclick = async (e) => {
+    const k = e.target.closest('[data-bg]')?.dataset.bg;
+    if (!k || k === B.bg) return;
+    const was = B.bg;
+    setBg(k);
+    root.querySelectorAll('.bgo').forEach((b) => b.classList.toggle('on', b.dataset.bg === k));
+    try { await call('set_background', { p_board: B.id, p_bg: k }); } catch (err) { setBg(was); toast(err.message, true); }
+  };
+}
 const WIDTHS = [3, 6, 12];
 const SWATCH = {
   yellow: '#f1e2a4', pink: '#efc9c4', green: '#cfe0c8', blue: '#c9dbe8', white: '#fbf9f4',
@@ -57,6 +86,7 @@ export async function startBoard(opts) {
   B = {
     id: opts.id,
     title: opts.title,
+    bg: opts.bg || 'cork',
     me: opts.me,
     opts,
     els: new Map(),        // id -> строка элемента (включая удалённые, нужны для истории)
@@ -94,6 +124,7 @@ export async function startBoard(opts) {
   for (const m of members) B.members.set(m.user_id, m);
   for (const e of els) B.els.set(e.id, e);
   for (const v of votes) setVote(v);
+  setBg(B.bg);
   fitCamera();
   renderAll();
   bindInput();
@@ -128,7 +159,7 @@ export async function startBoard(opts) {
     onTimer,
     onTimerAsk,
   });
-  B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle });
+  B.history = initHistory(B, { setPast, rollback, memberName, memberColor, setTitle, setBg });
   B.news = initNews(B, { fitCamera, memberName, renderEl });
   initUndo(B, {
     call, applyRemote, resync,
@@ -231,6 +262,7 @@ function boardActions() {
     ['fit', 'fit', 'Показать всю доску', ''],
     ['export', 'download', 'Скачать', ''],
     ['trash', 'trash', 'Корзина', ''],
+    canEdit() ? ['background', 'grid', 'Фон доски', ''] : null,
     isOwner() ? ['rename', 'pencil', 'Переименовать', ''] : null,
     '#Вместе',
     ['summon', 'bell', 'Позвать всех сюда', ''],
@@ -252,6 +284,7 @@ function runAction(m) {
   if (m === 'export') exportDialog();
   if (m === 'install') installApp();
   if (m === 'rename') renameDialog();
+  if (m === 'background') backgroundDialog();
   if (m === 'keys') keysDialog();
   if (m === 'trash') trashDialog();
   if (m === 'people') peopleDialog();
@@ -427,6 +460,7 @@ function buildLedge() {
 }
 
 function setTool(t) {
+  if ($('brush')) $('brush').hidden = true;
   B.tool = t;
   if (t !== 'link') cancelLink();
   for (const b of $('ledge').children) b.classList.toggle('on', !!t && b.dataset.tool === t);
@@ -446,7 +480,7 @@ function buildPens() {
   document.body.classList.toggle('pens-open', B.tool === 'draw');
   if (B.tool !== 'draw') { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = DRAW_COLORS.map((c) => `<button class="sw${!pen.eraser && pen.color === c ? ' on' : ''}" data-pc="${c}" style="background:${DRAW[c]}" aria-label="Цвет"></button>`).join('')
+  box.innerHTML = DRAW_COLORS.map((c) => `<button class="sw${!pen.eraser && pen.color === c ? ' on' : ''}" data-pc="${c}" style="background:${drawColor(c)}" aria-label="Цвет"></button>`).join('')
     + '<span class="vsep"></span>'
     + WIDTHS.map((w) => `<button class="pw${!pen.eraser && pen.width === w ? ' on' : ''}" data-pw="${w}" aria-label="Толщина"><i style="width:${w + 2}px;height:${w + 2}px"></i></button>`).join('')
     + '<span class="vsep"></span>'
@@ -914,6 +948,31 @@ function flyTo(x, y, s, ms) {
   requestAnimationFrame(step);
 }
 
+// Ластик и мелок: круг на месте кончика, по нему видно, где и чем ведёшь.
+// Стилус на многих системах курсора не показывает, ластику он нужнее всего.
+const ERASE_R = 12;
+const ERASE_PTS = [[0, 0], ...Array.from({ length: 8 }, (_, i) => [Math.round(Math.cos(i * Math.PI / 4) * ERASE_R), Math.round(Math.sin(i * Math.PI / 4) * ERASE_R)])];
+const penEraser = (e) => e.pointerType === 'pen' && (e.button === 5 || (e.buttons & 32) !== 0);
+function moveBrush(e) {
+  const ring = $('brush');
+  const erasing = e && (penEraser(e) || (B.tool === 'draw' && pen.eraser));
+  const drawing = e && B.tool === 'draw' && !pen.eraser;
+  const show = e && e.pointerType !== 'touch' && canEdit() && !B.past && (erasing || drawing);
+  if (!show) {
+    if (!ring.hidden) { ring.hidden = true; $('stage').classList.remove('brush-on'); }
+    return;
+  }
+  const d = erasing ? ERASE_R * 2 : Math.max(4, pen.width * B.cam.s);
+  if (ring._d !== d || ring._er !== erasing) {
+    ring._d = d; ring._er = erasing;
+    ring.style.width = ring.style.height = d + 'px';
+    ring.classList.toggle('eraser', !!erasing);
+    ring.style.setProperty('--c', erasing ? '#fff' : drawColor(pen.color));
+  }
+  ring.style.transform = `translate(${e.clientX - d / 2}px, ${e.clientY - d / 2}px)`;
+  if (ring.hidden) { ring.hidden = false; $('stage').classList.add('brush-on'); }
+}
+
 // Докатывание после броска: скорость по последним 100 мс движения, потом трение
 function glide(trail, now) {
   let recent = trail.filter(([t]) => now - t < 100);
@@ -1049,6 +1108,7 @@ function renderElNow(id) {
     }
     const path = node.querySelector('path.ink');
     path.setAttribute('stroke', DRAW[color] || DRAW.white);
+    path.style.stroke = drawColor(color);
     path.setAttribute('stroke-width', v.data.width || 6);
   } else {
     if (t === 'image') {
@@ -1381,6 +1441,7 @@ function drawTempNow(pts) {
   if (!pts) { p?.remove(); return; }
   if (!p) { p = svgEl('path', { class: 'ink temp-ink' }); svg.append(p); }
   p.setAttribute('stroke', DRAW[pen.color] || DRAW.white);
+  p.style.stroke = drawColor(pen.color);
   p.setAttribute('stroke-width', pen.width);
   p.setAttribute('d', smoothPath(pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10])));
 }
@@ -2278,11 +2339,19 @@ function bindInput() {
   };
 
   // ластик: линии мелка под пальцем помечаются и снимаются разом при отпускании
+  // ластик стирает всем своим кругом, а не одной точкой под кончиком;
+  // промежуточные точки быстрого движения тоже, чтобы не перескакивать линии
   const eraseAt = (e) => {
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.el.draw');
-    if (!el || el.classList.contains('erasing')) return;
-    el.classList.add('erasing');
-    g.ids.add(el.dataset.id);
+    // у нажатия и у искусственных событий список промежуточных точек пустой
+    const evs = e.getCoalescedEvents?.();
+    for (const ev of evs?.length ? evs : [e]) {
+      for (const [dx, dy] of ERASE_PTS) {
+        const el = document.elementFromPoint(ev.clientX + dx, ev.clientY + dy)?.closest('.el.draw');
+        if (!el || el.classList.contains('erasing')) continue;
+        el.classList.add('erasing');
+        g.ids.add(el.dataset.id);
+      }
+    }
   };
 
   stage.addEventListener('contextmenu', (e) => {
@@ -2324,7 +2393,7 @@ function bindInput() {
     if (e.target.tagName === 'TEXTAREA') return;
     closeCtx();
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    stage.setPointerCapture(e.pointerId);
+    try { stage.setPointerCapture(e.pointerId); } catch { /* указатель уже ушёл */ }
     clearTimeout(longPress);
 
     if (e.pointerType === 'touch' && twoFingersInEdit()) {
@@ -2377,6 +2446,15 @@ function bindInput() {
     if (!panBtn && box && canEdit() && !B.tool) {
       const elId = box.closest('.el').dataset.id;
       if (B.editing?.id !== elId) { g = { mode: 'tick', id: elId, li: Number(box.dataset.li), sx: e.clientX, sy: e.clientY, moved: false }; return; }
+    }
+
+    // обратный конец стилуса стирает всегда, каким бы ни был инструмент
+    if (!panBtn && penEraser(e) && canEdit()) {
+      e.preventDefault();
+      if (B.editing) finishEdit();
+      g = { mode: 'erase', ids: new Set() };
+      eraseAt(e);
+      return;
     }
 
     // мелок рисует поверх всего, ластик стирает линии мелка
@@ -2461,6 +2539,7 @@ function bindInput() {
   });
 
   stage.addEventListener('pointermove', (e) => {
+    moveBrush(e);
     const w = toWorld(e.clientX, e.clientY);
     if (g?.mode !== 'drag') B.live.cursor(w.x, w.y); // при переносе позиция и так уходит
     if (B.linkFrom) { tempEnd = w; queueStrings(); }
@@ -2470,7 +2549,8 @@ function bindInput() {
 
     if (g.mode === 'stroke') {
       // промежуточные точки быстрых движений, чтобы линия была гладкой
-      for (const ev of e.getCoalescedEvents?.() || [e]) {
+      const evs = e.getCoalescedEvents?.();
+      for (const ev of evs?.length ? evs : [e]) {
         const q = toWorld(ev.clientX, ev.clientY);
         const last = g.pts[g.pts.length - 1];
         if (Math.hypot(q.x - last[0], q.y - last[1]) * B.cam.s > 1.5) g.pts.push([q.x, q.y]);
@@ -2624,6 +2704,7 @@ function bindInput() {
     endGesture(false);
   };
   stage.addEventListener('pointerup', up);
+  stage.addEventListener('pointerleave', () => moveBrush(null));
   stage.addEventListener('pointercancel', up);
 
   function endGesture(cancel) {

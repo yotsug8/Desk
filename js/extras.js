@@ -182,7 +182,8 @@ function colorOf(r) {
   const c = r.data?.color;
   if (r.type === 'note') return A.SWATCH[c] || A.SWATCH.yellow;
   if (r.type === 'list') return c === 'yellow' ? '#f6edc6' : c === 'blue' ? '#e2ecf4' : '#fbf9f4';
-  if (r.type === 'draw') return A.DRAW[c] || A.DRAW.white;
+  // белый мел на светлом листе рисуется тёмным, как и на доске
+  if (r.type === 'draw') return !c || c === 'white' ? getComputedStyle(document.getElementById('app')).getPropertyValue('--chalk').trim() || A.DRAW.white : A.DRAW[c] || A.DRAW.white;
   if (r.type === 'image') return '#e9e4da';
   if (r.type === 'frame') return '#ffffff33';
   return c === 'white' ? '#fbf7ee' : c === 'red' ? '#b8412e' : '#26221f';
@@ -270,11 +271,12 @@ async function toPNG() {
   g.scale(sc, sc);
   g.translate(-x1, -y1);
 
-  // пробка
+  // фон как на доске: пробка, клетка, линейка или чистый лист
+  const bgImg = getComputedStyle($('cork')).backgroundImage;
   const tile = new Image();
-  tile.src = getComputedStyle($('cork')).backgroundImage.slice(5, -2);
+  if (bgImg.startsWith('url(')) tile.src = bgImg.slice(5, -2);
   await tile.decode().catch(() => {});
-  g.fillStyle = tile.width ? g.createPattern(tile, 'repeat') : '#b48a5e';
+  g.fillStyle = tile.width ? g.createPattern(tile, 'repeat') : getComputedStyle($('app')).backgroundColor || '#b48a5e';
   g.fillRect(x1, y1, x2 - x1, y2 - y1);
 
   const imgs = new Map(await Promise.all(solid.filter((r) => r.type === 'image').map(async (r) => {

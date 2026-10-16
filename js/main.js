@@ -194,6 +194,7 @@ async function enter(id, opts) {
   await startBoard({
     id,
     title: info.title,
+    bg: info.bg,
     me: info.me,
     fresh: opts.fresh,
     template: opts.template,

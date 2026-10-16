@@ -113,6 +113,10 @@ kbd { font: 500 11px var(--sans); color: var(--mute); }
 .stage.panning { cursor: grabbing; }
 .stage.tool-note, .stage.tool-text, .stage.tool-list, .stage.tool-draw, .stage.tool-frame { cursor: crosshair; }
 .stage.tool-link { cursor: alias; }
+/* круг ластика и мелка на месте кончика: системный курсор не нужен */
+.stage.brush-on, .stage.brush-on * { cursor: none !important; }
+.brush { position: absolute; left: 0; top: 0; z-index: 30; pointer-events: none; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 1.5px #0009, 0 0 0 3px #fff8; }
+.brush.eraser { background: #ffffff55; box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px #000a; }
 .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 /* далеко за краем экрана: не рисуется, но размеры и место сохраняются (нитки считают от них) */
 .el.far { visibility: hidden; }
@@ -296,6 +300,15 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
 .el.draw { pointer-events: none; }
 .el.draw svg { width: 100%; height: 100%; overflow: visible; display: block; }
 .el.draw path.ink, .strings path.ink { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+/* фон доски: светлые листы */
+:root { --chalk: #fdf3df; }
+.app.bg-grid, .app.bg-lines, .app.bg-plain { background-color: #fbfaf4; --chalk: #34414e; }
+.bgs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 6px 0 14px; }
+.bgo { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; border-radius: 10px; border: 2px solid transparent; font-size: 13px; }
+.bgo i { width: 100%; aspect-ratio: 1; border-radius: 7px; background-color: #b48a5e; background-size: 96px 96px; box-shadow: inset 0 0 0 1px #0002; }
+.bgo i.bg-grid, .bgo i.bg-lines, .bgo i.bg-plain { background-color: #fbfaf4; }
+.bgo.on { border-color: var(--acc); }
+@media (max-width: 400px) { .bgs { grid-template-columns: repeat(2, 1fr); } }
 .el.draw path.hit { fill: none; stroke: transparent; stroke-width: 18; stroke-linecap: round; pointer-events: stroke; cursor: pointer; }
 .stage.tool-draw .el.draw path.hit { cursor: crosshair; }
 .el.draw.erasing { opacity: .2; }
@@ -422,6 +435,7 @@ body.pens-open .toasts { bottom: calc(var(--bottom) + 132px); }
 .world.searching .el.found-cur { outline: 3px solid #f0b36b; outline-offset: 4px; }
 .minimap { padding: 4px; border-radius: 12px; background: var(--paper); box-shadow: var(--shadow); cursor: pointer; touch-action: none; }
 .minimap canvas { display: block; border-radius: 8px; background: #b48a5e; }
+.app.bg-grid .minimap canvas, .app.bg-lines .minimap canvas, .app.bg-plain .minimap canvas { background: #ece9df; }
 .app:has(#history:not([hidden])) .minimap, .app:has(#pastBar:not([hidden])) .minimap { display: none; }
 @media (max-width: 760px), (max-height: 560px) { .minimap { display: none; } }
 .choices { display: grid; gap: 8px; margin: 14px 0 4px; }

@@ -37,14 +37,37 @@ function tileURL() {
   return url;
 }
 
-// Картинка пробки живёт в таблице стилей, а не в style элемента: иначе при каждом сдвиге
+// Лист тетради: клетка 24 точки или линейка 32, светлая бумага.
+// Та же плитка 192, поэтому сдвиг и масштаб работают так же, как у пробки.
+function paperURL(kind) {
+  const size = 192;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fbfaf4';
+  g.fillRect(0, 0, size, size);
+  if (kind !== 'plain') {
+    g.fillStyle = kind === 'grid' ? '#c4d6e8' : '#b9cde2';
+    const step = kind === 'grid' ? 24 : 32;
+    for (let p = 0; p < size; p += step) {
+      g.fillRect(0, p, size, 1);
+      if (kind === 'grid') g.fillRect(p, 0, 1, size);
+    }
+  }
+  return `url(${c.toDataURL('image/png')})`;
+}
+
+// Картинки фона живут в таблице стилей, а не в style элемента: иначе при каждом сдвиге
 // браузер заново собирает длинный атрибут style с картинкой внутри, и движение тормозит
 let sheet = false;
-function useTile(el) {
+function useTile(el, kind = 'cork') {
   if (!sheet) {
     sheet = true;
     const st = document.createElement('style');
-    st.textContent = `.cork-tile { background-image: ${tileURL()}; }`;
+    st.textContent = `.cork-tile { background-image: ${tileURL()}; }
+.bg-grid .cork-tile, .cork-tile.bg-grid { background-image: ${paperURL('grid')}; }
+.bg-lines .cork-tile, .cork-tile.bg-lines { background-image: ${paperURL('lines')}; }
+.bg-plain .cork-tile, .cork-tile.bg-plain { background-image: none; }`;
     document.head.append(st);
   }
   el.classList.add('cork-tile');
