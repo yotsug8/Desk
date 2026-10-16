@@ -55,7 +55,6 @@ test('Ctrl+Z отменяет создание, перенос, цвет, тек
   await expect(notes(page)).toHaveCount(0);
   await waitSaved(page);
   await page.reload();
-  await expect(page.locator('#hint')).toBeVisible();
   await expect(notes(page)).toHaveCount(0);
 });
 

@@ -172,7 +172,7 @@ export async function startBoard(opts) {
     local: (id, patch) => { const r = B.els.get(id); if (r) { B.els.set(id, { ...r, ...patch }); renderEl(id); } } });
   initClip(B, { toWorld, uuid, call, applyRemote, setSelection, resync, canEdit, deleteSel: (q) => deleteSel(q), snap, commit });
   initTimer(B, { openModal, myName: () => B.members.get(B.me.user_id)?.name || B.me.name || '' });
-  initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, smoothPath, parsePoints, imageURL, SWATCH, DRAW, STRING });
+  initExtras(B, { viewOf, flyTo, applyCamera, manualCamera, openModal, anchor, linePath, parsePoints, imageURL, SWATCH, DRAW, STRING });
 
   B.loaded = true;
   renderRequests();
@@ -498,20 +498,13 @@ function buildPens() {
 
 const parsePoints = (str) => (str || '').split(' ').map((p) => p.split(',').map(Number));
 
-// Плавная линия через середины отрезков
-function smoothPath(pts) {
+// Линия ровно по точкам руки, без сглаживания
+function linePath(pts) {
   if (!pts.length) return '';
-  if (pts.length < 3) {
-    const [a, b = a] = pts;
-    return `M${a[0]} ${a[1]} L${b[0] + 0.01} ${b[1]}`;
-  }
-  let d = `M${pts[0][0]} ${pts[0][1]}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
-    d += ` Q${pts[i][0]} ${pts[i][1]} ${mx.toFixed(1)} ${my.toFixed(1)}`;
-  }
-  const l = pts[pts.length - 1];
-  return d + ` L${l[0]} ${l[1]}`;
+  const [a, b = [a[0] + 0.01, a[1]]] = pts;
+  let d = `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`;
+  for (let i = 2; i < pts.length; i++) d += ` L${pts[i][0]} ${pts[i][1]}`;
+  return d;
 }
 
 // Упрощение линии (Рамер, Дуглас, Пекер): меньше точек при том же виде
@@ -530,7 +523,7 @@ function simplify(pts, eps) {
 
 // Готовую линию сохраняем отдельным элементом: её можно двигать, снимать и откатывать
 async function saveStroke(raw) {
-  let pts = simplify(raw, 0.8 / B.cam.s);
+  let pts = simplify(raw, 0.25 / B.cam.s);
   if (pts.length > 1500) pts = pts.filter((_, i) => i % Math.ceil(pts.length / 1500) === 0);
   const pad = pen.width + 2;
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -1103,7 +1096,7 @@ function renderElNow(id) {
       node.dataset.key = key;
       const svg = node.querySelector('svg');
       svg.setAttribute('viewBox', `0 0 ${v.w} ${v.h}`);
-      const d = smoothPath(parsePoints(v.data.points));
+      const d = linePath(parsePoints(v.data.points));
       for (const p of svg.querySelectorAll('path')) p.setAttribute('d', d);
     }
     const path = node.querySelector('path.ink');
@@ -1412,10 +1405,6 @@ function renderStrings() {
   }
   for (const [id, st] of strings) if (!seen.has(id)) { st.g.remove(); strings.delete(id); }
 
-  // пустая доска: подсказка мелом к полочке
-  const empty = !B.past && canEdit() && ![...B.els.values()].some((r) => !r.deleted_at && r.type !== 'link');
-  $('hint').hidden = !empty;
-
   // нитка, которую сейчас тянут
   let temp = svg.querySelector('.temp');
   const from = B.linkFrom && tempEnd && anchor(B.linkFrom);
@@ -1443,7 +1432,7 @@ function drawTempNow(pts) {
   p.setAttribute('stroke', DRAW[pen.color] || DRAW.white);
   p.style.stroke = drawColor(pen.color);
   p.setAttribute('stroke-width', pen.width);
-  p.setAttribute('d', smoothPath(pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10])));
+  p.setAttribute('d', linePath(pts.map(([x, y]) => [Math.round(x * 10) / 10, Math.round(y * 10) / 10])));
 }
 
 
@@ -2548,12 +2537,12 @@ function bindInput() {
     if (!g) return;
 
     if (g.mode === 'stroke') {
-      // промежуточные точки быстрых движений, чтобы линия была гладкой
+      // все промежуточные точки движения, чтобы линия шла точно за рукой
       const evs = e.getCoalescedEvents?.();
       for (const ev of evs?.length ? evs : [e]) {
         const q = toWorld(ev.clientX, ev.clientY);
         const last = g.pts[g.pts.length - 1];
-        if (Math.hypot(q.x - last[0], q.y - last[1]) * B.cam.s > 1.5) g.pts.push([q.x, q.y]);
+        if (Math.hypot(q.x - last[0], q.y - last[1]) * B.cam.s > 0.5) g.pts.push([q.x, q.y]);
       }
       drawTemp(g.pts);
       return;

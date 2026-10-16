@@ -346,7 +346,7 @@ function paintEl(g, r, img) {
     g.strokeStyle = colorOf(r);
     g.lineWidth = r.data.width || 6;
     g.lineCap = g.lineJoin = 'round';
-    g.stroke(new Path2D(A.smoothPath(A.parsePoints(r.data.points))));
+    g.stroke(new Path2D(A.linePath(A.parsePoints(r.data.points))));
     g.restore();
   } else if (r.type === 'image') {
     shadowed(g, () => { g.fillStyle = '#fbf9f4'; g.fillRect(r.x, r.y, r.w, r.h); });

@@ -37,7 +37,7 @@ function tileURL() {
   return url;
 }
 
-// Лист тетради: клетка 24 точки или линейка 32, светлая бумага.
+// Лист тетради: клетка или линейка по 48 точек, светлая бумага.
 // Та же плитка 192, поэтому сдвиг и масштаб работают так же, как у пробки.
 function paperURL(kind) {
   const size = 192;
@@ -48,7 +48,7 @@ function paperURL(kind) {
   g.fillRect(0, 0, size, size);
   if (kind !== 'plain') {
     g.fillStyle = kind === 'grid' ? '#c4d6e8' : '#b9cde2';
-    const step = kind === 'grid' ? 24 : 32;
+    const step = 48;
     for (let p = 0; p < size; p += step) {
       g.fillRect(0, p, size, 1);
       if (kind === 'grid') g.fillRect(p, 0, 1, size);
