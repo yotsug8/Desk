@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#b48a5e">
+  <title>Доска</title>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=PT+Serif:wght@400;700&display=swap">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Доска">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="modulepreload" href="js/main.js">
+  <link rel="modulepreload" href="js/api.js">
+  <link rel="modulepreload" href="js/config.js">
+  <link rel="modulepreload" href="js/ui.js">
+  <link rel="modulepreload" href="js/cork.js">
+  <link rel="modulepreload" href="js/pwa.js">
+  <link rel="modulepreload" href="js/board.js">
+  <link rel="modulepreload" href="js/icons.js">
+  <link rel="modulepreload" href="js/live.js">
+  <link rel="modulepreload" href="js/history.js">
+  <link rel="modulepreload" href="js/merge.js">
+  <link rel="modulepreload" href="js/extras.js">
+  <link rel="modulepreload" href="js/clip.js">
+  <link rel="modulepreload" href="js/timer.js">
+  <link rel="modulepreload" href="js/undo.js">
+  <link rel="modulepreload" href="js/transfer.js">
+  <link rel="modulepreload" href="js/news.js">
+  <link rel="modulepreload" href="js/palette.js">
+</head>
+<body>
+  <!-- Стартовый экран и вход -->
+  <main id="gate" class="gate"><div class="card loading-card"><span class="spin" aria-label="Загрузка"></span></div></main>
+
+  <!-- Доска -->
+  <div id="app" class="app" hidden>
+    <div id="cork" class="corklayer" aria-hidden="true"></div>
+    <div id="stage" class="stage">
+      <div id="world" class="world">
+        <svg id="strings" class="strings" xmlns="http://www.w3.org/2000/svg"></svg>
+        <svg id="guides" class="guides" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+      </div>
+    </div>
+    <div id="cursors" class="cursors"></div>
+    <div id="brush" class="brush" hidden aria-hidden="true"></div>
+    <div id="seltools" class="bar seltools" hidden></div>
+    <div id="ctx" class="pop ctx" hidden></div>
+
+    <header class="top">
+      <div class="bar topbar">
+        <button id="btnMenu" class="ib" type="button" aria-label="Меню доски"></button>
+        <div id="titleLabel" class="title-label">
+          <span id="boardTitle"></span>
+          <small id="status" class="status"></small>
+        </div>
+      </div>
+      <div class="sp"></div>
+      <div id="timer" class="bar timer" hidden></div>
+      <div id="people" class="people"></div>
+      <button id="btnHistory" class="bar btn" type="button"></button>
+      <button id="btnInvite" class="btn pri" type="button" aria-label="Пригласить"></button>
+    </header>
+    <div id="menu" class="pop menu" hidden></div>
+    <!-- полоски под верхней строкой: слежение, запросы, поиск; встают друг под другом -->
+    <div class="banners">
+      <div id="find" class="bar findbar" hidden></div>
+      <div id="followBar" class="bar followbar" hidden></div>
+      <div id="news" class="bar newsbar" role="status" hidden></div>
+      <div id="requests" class="requests" hidden></div>
+    </div>
+
+    <nav id="ledge" class="ledge" aria-label="Инструменты"></nav>
+    <div class="corner">
+      <div id="minimap" class="minimap" hidden title="Карта доски: нажмите, чтобы перейти"></div>
+      <div id="zoom" class="bar zoom" aria-label="Масштаб"></div>
+    </div>
+    <div id="pens" class="bar pens" hidden></div>
+    <div id="undo" class="undo" hidden></div>
+
+    <aside id="history" class="hist" aria-label="История" hidden></aside>
+    <div id="pastBar" class="bar pastbar" hidden></div>
+  </div>
+
+  <div id="modal" class="modal" hidden></div>
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+
+  <script>
+    // Сбой сети при загрузке скриптов не должен оставлять вечную крутилку:
+    // один раз тихо перезагружаем, потом показываем кнопку «Обновить»
+    (function () {
+      var done = false;
+      function fail() {
+        if (done || window.__deskBooted) return;
+        done = true;
+        var again = false;
+        try { again = !sessionStorage.getItem('desk-reboot'); sessionStorage.setItem('desk-reboot', '1'); } catch (e) {}
+        if (again) { location.reload(); return; }
+        var gate = document.getElementById('gate');
+        gate.hidden = false;
+        gate.innerHTML = '<div class="card loading-card"><p>Не удалось загрузить доску. Проверьте интернет.</p><button class="bigbtn" type="button">Обновить</button></div>';
+        gate.querySelector('button').onclick = function () { location.reload(); };
+      }
+      addEventListener('error', function (e) {
+        var t = e.target;
+        if (t && (t.tagName === 'SCRIPT' || (t.tagName === 'LINK' && t.rel === 'modulepreload'))) fail();
+      }, true);
+      setTimeout(fail, 15000);
+    })();
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" crossorigin="anonymous" defer></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

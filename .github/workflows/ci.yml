@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Проверка синтаксиса JS
+        run: for f in js/*.js tests/*.js tests/*.mjs; do node --check "$f"; done
+      - name: Локальный Supabase с миграциями
+        run: npx supabase start
+      - name: Браузер для тестов
+        run: npx playwright install --with-deps chromium
+      - name: Тесты Playwright
+        run: npx playwright test
+        env:
+          CI: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+
+  # Боевая база Supabase: создаётся и обновляется после зелёных тестов, если задан секрет.
+  # Скрипт повторно безопасен: проект ищется по имени, применённые миграции пропускаются.
+  prod-db:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Подъём и миграции
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: node scripts/setup-prod.mjs
+      # Адрес и публичный ключ (он и так виден в коде сайта) записываем в ветку
+      - name: Сохранить config.js
+        if: env.SUPABASE_ACCESS_TOKEN != ''
+        run: |
+          if ! git diff --quiet js/config.js; then
+            git config user.name yotsug8
+            git config user.email yotsug8@gmail.com
+            git commit -m "Адрес боевой базы в config.js" js/config.js
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+  # Сайт на Vercel: выкладывается после зелёных тестов, если задан секрет VERCEL_TOKEN
+  deploy-vercel:
+    needs: [test, prod-db]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: team_ifs6vgLtjxPHKKRFo5PjuKY2
+      VERCEL_PROJECT_ID: prj_p7pp5Bd9mSRPgZYgoM8i3NMCYuPH
+    steps:
+      - uses: actions/checkout@v4
+        if: env.VERCEL_TOKEN != ''
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-node@v4
+        if: env.VERCEL_TOKEN != ''
+        with:
+          node-version: 22
+      - name: Выкладка
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          mkdir _site
+          cp -r index.html css js icons manifest.webmanifest sw.js _site/
+          cd _site
+          url=$(npx --yes vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN")
+          # короткий адрес сайта всегда смотрит на свежую выкладку
+          curl -sf -X POST "https://api.vercel.com/v2/deployments/${url#https://}/aliases?teamId=$VERCEL_ORG_ID" \
+            -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+            -d '{"alias":"doskaru.vercel.app"}' > /dev/null
+          echo "Сайт: https://doskaru.vercel.app ($url)" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- место, где красное звено проходит над светлым: обе стороны пересекаются на прямых участках -->
+    <clipPath id="over"><rect x="266" y="166" width="80" height="80"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="114" fill="#1f1a17"/>
+  <rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#e0533a" stroke-width="40"/>
+  <rect x="206" y="206" width="200" height="200" rx="38" fill="none" stroke="#1f1a17" stroke-width="60"/>
+  <rect x="206" y="206" width="200" height="200" rx="38" fill="none" stroke="#f4ecdc" stroke-width="40"/>
+  <g clip-path="url(#over)">
+    <rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#1f1a17" stroke-width="60"/>
+    <rect x="106" y="106" width="200" height="200" rx="38" fill="none" stroke="#e0533a" stroke-width="40"/>
+  </g>
+</svg>
