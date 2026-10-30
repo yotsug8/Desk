@@ -2,7 +2,7 @@
   "name": "desk",
   "private": true,
   "version": "0.1.0",
-  "description": "Доска: общая онлайн-доска заметок с защитой от порчи",
+  "description": "Веб-приложение для совместной работы с заметками",
   "type": "module",
   "scripts": {
     "serve": "node tests/serve.mjs",
